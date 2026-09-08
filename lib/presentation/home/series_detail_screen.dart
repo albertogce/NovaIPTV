@@ -128,6 +128,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         builder: (_) => PlayerScreen(
           streamUrl: streamUrl,
           channelName: '${widget.series.title} - $epTitle',
+          progressId: 'episode:$parsedEpisodeId',
           queue: queue,
           initialQueueIndex: validQueueIndex,
           onQueueIndexChanged: (index) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import '../../core/playback/watch_progress_store.dart';
 
 class PlayerQueueItem {
   final String streamUrl;
@@ -15,6 +16,7 @@ class PlayerScreen extends StatefulWidget {
   final List<PlayerQueueItem> queue;
   final int initialQueueIndex;
   final ValueChanged<int>? onQueueIndexChanged;
+  final String? progressId;
 
   const PlayerScreen({
     super.key,
@@ -23,6 +25,7 @@ class PlayerScreen extends StatefulWidget {
     this.queue = const [],
     this.initialQueueIndex = 0,
     this.onQueueIndexChanged,
+    this.progressId,
   });
 
   @override
@@ -40,6 +43,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   late String _currentChannelName;
 
   final FocusNode _focusNode = FocusNode();
+  final FocusNode _progressFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -70,8 +74,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await controller.initialize();
       if (!mounted) return;
       setState(() => _isInitialized = true);
+      controller.addListener(_saveProgress);
+      final saved = widget.progressId == null ? null : WatchProgressStore().get(widget.progressId!);
+      if (saved != null && saved.position < controller.value.duration) {
+        await controller.seekTo(saved.position);
+      }
       controller.play();
-      Future.delayed(const Duration(seconds: 3), () {
+      Future.delayed(const Duration(seconds: 5), () {
         if (mounted) setState(() => _showControls = false);
       });
     } catch (e) {
@@ -86,10 +95,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  Future<void> _saveProgress() async {
+    if (widget.progressId == null || _controller == null || !_controller!.value.isInitialized) return;
+    final value = _controller!.value;
+    if (value.duration.inSeconds < 1 || value.position.inSeconds < 2) return;
+    await WatchProgressStore().save(WatchProgress(id: widget.progressId!, title: _currentChannelName, position: value.position, duration: value.duration, updatedAt: DateTime.now()));
+  }
+
   void _toggleControls() {
     setState(() => _showControls = !_showControls);
     if (_showControls) {
-      Future.delayed(const Duration(seconds: 3), () {
+      Future.delayed(const Duration(seconds: 5), () {
         if (mounted && _showControls) setState(() => _showControls = false);
       });
     }
@@ -122,7 +138,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _showControlsBriefly() {
     if (!mounted) return;
     setState(() => _showControls = true);
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 5), () {
       if (mounted) setState(() => _showControls = false);
     });
   }
@@ -156,7 +172,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    _saveProgress();
     _focusNode.dispose();
+    _progressFocusNode.dispose();
     _controller?.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -247,6 +265,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     hasNext: _queueIndex < widget.queue.length - 1,
                     onPrevious: () => _changeQueueItem(-1),
                     onNext: () => _changeQueueItem(1),
+                    position: _controller!.value.position,
+                    duration: _controller!.value.duration,
+                    onSeek: (value) => _controller!.seekTo(value),
+                    progressFocusNode: _progressFocusNode,
                   ),
               ],
             ),
@@ -266,6 +288,10 @@ class _ControlsOverlay extends StatelessWidget {
   final bool hasNext;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
+  final Duration position;
+  final Duration duration;
+  final ValueChanged<Duration> onSeek;
+  final FocusNode progressFocusNode;
 
   const _ControlsOverlay({
     required this.channelName,
@@ -276,6 +302,10 @@ class _ControlsOverlay extends StatelessWidget {
     required this.hasNext,
     required this.onPrevious,
     required this.onNext,
+    required this.position,
+    required this.duration,
+    required this.onSeek,
+    required this.progressFocusNode,
   });
 
   @override
@@ -351,6 +381,26 @@ class _ControlsOverlay extends StatelessWidget {
             ],
           ),
           const Spacer(),
+          Focus(
+            focusNode: progressFocusNode,
+            autofocus: true,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Row(children: [
+                Text(_formatDuration(position), style: const TextStyle(color: Colors.white, fontSize: 12)),
+                const SizedBox(width: 8),
+                Expanded(child: Slider(
+                  min: 0,
+                  max: duration.inMilliseconds > 0 ? duration.inMilliseconds.toDouble() : 1,
+                  value: position.inMilliseconds.clamp(0, duration.inMilliseconds > 0 ? duration.inMilliseconds : 1).toDouble(),
+                  onChanged: (value) => onSeek(Duration(milliseconds: value.round())),
+                )),
+                const SizedBox(width: 8),
+                Text(_formatDuration(duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
+              ],
+              ),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(bottom: 16),
             child: Container(
@@ -375,6 +425,8 @@ class _ControlsOverlay extends StatelessWidget {
     );
   }
 }
+
+String _formatDuration(Duration value) => '${value.inMinutes.remainder(60).toString().padLeft(2, '0')}:${value.inSeconds.remainder(60).toString().padLeft(2, '0')}';
 
 class _ErrorView extends StatelessWidget {
   final String message;

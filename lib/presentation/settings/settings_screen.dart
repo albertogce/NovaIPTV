@@ -39,15 +39,35 @@ class _SettingsScreenState extends State<SettingsScreen>
   final FocusNode _urlFocusNode = FocusNode();
   final FocusNode _userFocusNode = FocusNode();
   final FocusNode _passFocusNode = FocusNode();
-  final FocusNode _dropdownFocusNode = FocusNode();
+  final FocusNode _sliderFocusNode = FocusNode();
+
   final List<FocusNode> _firstCategoryFocusNodes = [
     FocusNode(),
     FocusNode(),
     FocusNode(),
   ];
 
-  // Auto-refresh in days (1, 3, 7 days; 0 = nunca)
+  // Auto-refresh & Appearance state
   int _autoRefreshDays = 0;
+  double _scale = 1.0;
+  int _density = 0;
+  bool _contrast = false;
+
+  final Map<String, String> _colors = <String, String>{
+    'ROJO': 'favorites',
+    'VERDE': 'search',
+    'AMARILLO': 'live',
+    'AZUL': 'none',
+  };
+
+  static const Map<String, String> _actions = {
+    'none': 'Sin asignar',
+    'favorites': 'Favoritos',
+    'search': 'Buscar',
+    'live': 'Canales en vivo',
+    'movies': 'Películas',
+    'series': 'Series',
+  };
 
   // Live Categories ordering & visibility
   late List<LiveCategory> _liveCats;
@@ -92,6 +112,19 @@ class _SettingsScreenState extends State<SettingsScreen>
         final min = int.tryParse(oldMinStr) ?? 0;
         _autoRefreshDays = (min / 1440).round();
       }
+    }
+
+    _scale =
+        double.tryParse(storage.getString('settings_card_scale') ?? '') ?? 1.0;
+    _density =
+        int.tryParse(storage.getString('settings_grid_density') ?? '') ?? 0;
+    _contrast = storage.getBool('settings_high_contrast') ?? false;
+
+    final savedColors = storage.getStringList('settings_color_actions') ?? [];
+    var i = 0;
+    for (final key in _colors.keys) {
+      if (i < savedColors.length) _colors[key] = savedColors[i];
+      i++;
     }
 
     _initCategories();
@@ -163,6 +196,15 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  void _changeScale(int direction) {
+    final values = [.8, .9, 1.0, 1.1, 1.2, 1.3];
+    var index = values.indexOf(_scale);
+    if (index < 0) index = 2;
+    index = (index + direction).clamp(0, values.length - 1);
+    setState(() => _scale = values[index]);
+    storage.setString('settings_card_scale', _scale.toString());
+  }
+
   Future<void> _saveCategoriesLive() async {
     await storage.setStringList(
       'settings_live_cat_hidden',
@@ -208,33 +250,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     _urlFocusNode.dispose();
     _userFocusNode.dispose();
     _passFocusNode.dispose();
-    _dropdownFocusNode.dispose();
+    _sliderFocusNode.dispose();
     for (final node in _firstCategoryFocusNodes) {
       node.dispose();
     }
     super.dispose();
-  }
-
-  KeyEventResult _handleFieldKeyEvent(
-    FocusNode node,
-    KeyEvent event,
-    FocusNode? nextNode,
-    FocusNode? prevNode,
-  ) {
-    if (event is KeyDownEvent) {
-      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        if (nextNode != null) {
-          nextNode.requestFocus();
-          return KeyEventResult.handled;
-        }
-      } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        if (prevNode != null) {
-          prevNode.requestFocus();
-          return KeyEventResult.handled;
-        }
-      }
-    }
-    return KeyEventResult.ignored;
   }
 
   void _switchTab(int delta) {
@@ -249,6 +269,25 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  KeyEventResult _handleFormFieldKey({
+    required KeyEvent event,
+    FocusNode? nextFocus,
+    FocusNode? prevFocus,
+  }) {
+    if (event is KeyDownEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
+          nextFocus != null) {
+        nextFocus.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp && prevFocus != null) {
+        prevFocus.requestFocus();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -257,140 +296,380 @@ class _SettingsScreenState extends State<SettingsScreen>
       },
       child: Scaffold(
         backgroundColor: const Color(0xFF0B1117),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSectionHeader('Credenciales IPTV'),
-              const SizedBox(height: 12),
-              _buildCard([
-                Focus(
-                  onKeyEvent: (node, event) =>
-                      _handleFieldKeyEvent(node, event, _userFocusNode, null),
-                  child: TextFormField(
-                    controller: _urlController,
-                    focusNode: _urlFocusNode,
-                    autofocus: true,
-                    textInputAction: TextInputAction.next,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      labelText: 'URL Servidor',
-                      labelStyle: TextStyle(color: Colors.white70),
-                      prefixIcon: Icon(Icons.link, color: Color(0xFF5DE0C2)),
-                      border: OutlineInputBorder(),
-                    ),
-                    onFieldSubmitted: (_) => _userFocusNode.requestFocus(),
-                  ),
-                ),
+        body: FocusTraversalGroup(
+          policy: ReadingOrderTraversalPolicy(),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader('Credenciales IPTV'),
                 const SizedBox(height: 12),
-                Focus(
-                  onKeyEvent: (node, event) => _handleFieldKeyEvent(
-                    node,
-                    event,
-                    _passFocusNode,
-                    _urlFocusNode,
-                  ),
-                  child: TextFormField(
-                    controller: _userController,
-                    focusNode: _userFocusNode,
-                    textInputAction: TextInputAction.next,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      labelText: 'Usuario',
-                      labelStyle: TextStyle(color: Colors.white70),
-                      prefixIcon: Icon(Icons.person, color: Color(0xFF5DE0C2)),
-                      border: OutlineInputBorder(),
+                _buildCard([
+                  Focus(
+                    onKeyEvent: (node, event) => _handleFormFieldKey(
+                      event: event,
+                      nextFocus: _userFocusNode,
                     ),
-                    onFieldSubmitted: (_) => _passFocusNode.requestFocus(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Focus(
-                  onKeyEvent: (node, event) => _handleFieldKeyEvent(
-                    node,
-                    event,
-                    _dropdownFocusNode,
-                    _userFocusNode,
-                  ),
-                  child: TextFormField(
-                    controller: _passController,
-                    focusNode: _passFocusNode,
-                    textInputAction: TextInputAction.next,
-                    obscureText: true,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      labelText: 'Contraseña',
-                      labelStyle: TextStyle(color: Colors.white70),
-                      prefixIcon: Icon(Icons.lock, color: Color(0xFF5DE0C2)),
-                      border: OutlineInputBorder(),
+                    child: TextFormField(
+                      controller: _urlController,
+                      focusNode: _urlFocusNode,
+                      autofocus: true,
+                      textInputAction: TextInputAction.next,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'URL Servidor',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        prefixIcon: Icon(Icons.link, color: Color(0xFF5DE0C2)),
+                        border: OutlineInputBorder(),
+                      ),
+                      onFieldSubmitted: (_) => _userFocusNode.requestFocus(),
                     ),
-                    onFieldSubmitted: (_) => _dropdownFocusNode.requestFocus(),
                   ),
-                ),
-              ]),
+                  const SizedBox(height: 12),
+                  Focus(
+                    onKeyEvent: (node, event) => _handleFormFieldKey(
+                      event: event,
+                      nextFocus: _passFocusNode,
+                      prevFocus: _urlFocusNode,
+                    ),
+                    child: TextFormField(
+                      controller: _userController,
+                      focusNode: _userFocusNode,
+                      textInputAction: TextInputAction.next,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'Usuario',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        prefixIcon: Icon(
+                          Icons.person,
+                          color: Color(0xFF5DE0C2),
+                        ),
+                        border: OutlineInputBorder(),
+                      ),
+                      onFieldSubmitted: (_) => _passFocusNode.requestFocus(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Focus(
+                    onKeyEvent: (node, event) => _handleFormFieldKey(
+                      event: event,
+                      nextFocus: _sliderFocusNode,
+                      prevFocus: _userFocusNode,
+                    ),
+                    child: TextFormField(
+                      controller: _passController,
+                      focusNode: _passFocusNode,
+                      textInputAction: TextInputAction.next,
+                      obscureText: true,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'Contraseña',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        prefixIcon: Icon(Icons.lock, color: Color(0xFF5DE0C2)),
+                        border: OutlineInputBorder(),
+                      ),
+                      onFieldSubmitted: (_) => _sliderFocusNode.requestFocus(),
+                    ),
+                  ),
+                ]),
 
-              const SizedBox(height: 28),
-              _buildSectionHeader('Actualización Automática'),
-              const SizedBox(height: 12),
-              _buildCard([
+                const SizedBox(height: 28),
+                _buildSectionHeader('Apariencia y accesos'),
+                const SizedBox(height: 12),
+                _buildCard([
+                  const Text(
+                    'Tamaño de tarjetas',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Focus(
+                    focusNode: _sliderFocusNode,
+                    onKeyEvent: (_, event) {
+                      if (event is KeyDownEvent) {
+                        if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                          _changeScale(-1);
+                          return KeyEventResult.handled;
+                        }
+                        if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                          _changeScale(1);
+                          return KeyEventResult.handled;
+                        }
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: Builder(
+                      builder: (context) {
+                        final hasFocus = Focus.of(context).hasFocus;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: hasFocus
+                                ? const Color(0xFF1D3039)
+                                : Colors.transparent,
+                            border: Border.all(
+                              color: hasFocus
+                                  ? const Color(0xFF5DE0C2)
+                                  : Colors.white24,
+                              width: hasFocus ? 2 : 1,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Slider(
+                            value: _scale,
+                            min: .8,
+                            max: 1.3,
+                            divisions: 5,
+                            activeColor: const Color(0xFF5DE0C2),
+                            onChanged: (value) {
+                              setState(() => _scale = value);
+                              storage.setString(
+                                'settings_card_scale',
+                                value.toString(),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Densidad de cuadrícula',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Focus(
+                    child: Builder(
+                      builder: (context) {
+                        final hasFocus = Focus.of(context).hasFocus;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: hasFocus
+                                ? const Color(0xFF1D3039)
+                                : Colors.transparent,
+                            border: Border.all(
+                              color: hasFocus
+                                  ? const Color(0xFF5DE0C2)
+                                  : Colors.white24,
+                              width: hasFocus ? 2 : 1,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: DropdownButton<int>(
+                            value: _density,
+                            isExpanded: true,
+                            underline: const SizedBox(),
+                            dropdownColor: const Color(0xFF15212A),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 0,
+                                child: Text('Automática'),
+                              ),
+                              DropdownMenuItem(value: 1, child: Text('Cómoda')),
+                              DropdownMenuItem(value: 2, child: Text('Densa')),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _density = value);
+                                storage.setString(
+                                  'settings_grid_density',
+                                  value.toString(),
+                                );
+                              }
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    title: const Text(
+                      'Modo alto contraste',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    value: _contrast,
+                    activeColor: const Color(0xFF5DE0C2),
+                    onChanged: (value) {
+                      setState(() => _contrast = value);
+                      storage.setBool('settings_high_contrast', value);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Botones de color del mando',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._colors.keys.map(_colorRow),
+                ]),
+
+                const SizedBox(height: 28),
+                _buildSectionHeader('Actualización Automática'),
+                const SizedBox(height: 12),
                 _FocusableDropdown(
-                  focusNode: _dropdownFocusNode,
                   value: _autoRefreshDays,
                   onChanged: (val) {
                     if (val != null) {
                       _updateAutoRefreshDays(val);
                     }
                   },
-                  onNavigateUp: () => _passFocusNode.requestFocus(),
                 ),
-              ]),
 
-              const SizedBox(height: 28),
-              _buildSectionHeader('Gestión de Categorías'),
-              const SizedBox(height: 12),
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF15212A),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    TabBar(
-                      controller: _tabController,
-                      indicatorColor: const Color(0xFF5DE0C2),
-                      labelColor: const Color(0xFF5DE0C2),
-                      unselectedLabelColor: Colors.white60,
-                      tabs: const [
-                        Tab(text: 'En Vivo'),
-                        Tab(text: 'Películas'),
-                        Tab(text: 'Series'),
-                      ],
+                const SizedBox(height: 28),
+                _buildSectionHeader('Gestión de Categorías'),
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF15212A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
                     ),
-                    SizedBox(
-                      height: 380,
-                      child: TabBarView(
+                  ),
+                  child: Column(
+                    children: [
+                      TabBar(
                         controller: _tabController,
-                        children: [
-                          _buildLiveCategoryTab(),
-                          _buildVodCategoryTab(),
-                          _buildSeriesCategoryTab(),
+                        indicatorColor: const Color(0xFF5DE0C2),
+                        labelColor: const Color(0xFF5DE0C2),
+                        unselectedLabelColor: Colors.white60,
+                        tabs: const [
+                          Tab(text: 'En Vivo'),
+                          Tab(text: 'Películas'),
+                          Tab(text: 'Series'),
                         ],
                       ),
-                    ),
-                  ],
+                      SizedBox(
+                        height: 380,
+                        child: TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildLiveCategoryTab(),
+                            _buildVodCategoryTab(),
+                            _buildSeriesCategoryTab(),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 24),
-            ],
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  Widget _colorRow(String key) => Focus(
+    onKeyEvent: (node, event) {
+      if (event is KeyDownEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.select ||
+            event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.gameButtonSelect) {
+          final actionKeys = _actions.keys.toList();
+          final currentIndex = actionKeys.indexOf(_colors[key] ?? 'none');
+          final nextIndex = (currentIndex + 1) % actionKeys.length;
+          final nextValue = actionKeys[nextIndex];
+
+          setState(() => _colors[key] = nextValue);
+          storage.setStringList(
+            'settings_color_actions',
+            _colors.values.toList(),
+          );
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    },
+    child: Builder(
+      builder: (context) {
+        final hasFocus = Focus.of(context).hasFocus;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: hasFocus ? const Color(0xFF1D3039) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: hasFocus ? const Color(0xFF5DE0C2) : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.circle, color: _color(key), size: 18),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Botón $key',
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ],
+              ),
+              DropdownButton<String>(
+                value: _colors[key],
+                dropdownColor: const Color(0xFF15212A),
+                underline: const SizedBox(),
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                items: _actions.entries
+                    .map(
+                      (entry) => DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _colors[key] = value);
+                    storage.setStringList(
+                      'settings_color_actions',
+                      _colors.values.toList(),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+
+  Color _color(String key) => {
+    'ROJO': Colors.redAccent,
+    'VERDE': Colors.greenAccent,
+    'AMARILLO': Colors.amber,
+    'AZUL': Colors.blueAccent,
+  }[key]!;
 
   Widget _buildSectionHeader(String title) {
     return Text(
@@ -630,17 +909,10 @@ class _SettingsScreenState extends State<SettingsScreen>
 }
 
 class _FocusableDropdown extends StatefulWidget {
-  final FocusNode focusNode;
   final int value;
   final ValueChanged<int?> onChanged;
-  final VoidCallback onNavigateUp;
 
-  const _FocusableDropdown({
-    required this.focusNode,
-    required this.value,
-    required this.onChanged,
-    required this.onNavigateUp,
-  });
+  const _FocusableDropdown({required this.value, required this.onChanged});
 
   @override
   State<_FocusableDropdown> createState() => _FocusableDropdownState();
@@ -650,36 +922,24 @@ class _FocusableDropdownState extends State<_FocusableDropdown> {
   bool _hasFocus = false;
 
   @override
-  void initState() {
-    super.initState();
-    widget.focusNode.addListener(() {
-      if (mounted) {
-        setState(() => _hasFocus = widget.focusNode.hasFocus);
-      }
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Focus(
-      focusNode: widget.focusNode,
+      onFocusChange: (focused) => setState(() => _hasFocus = focused),
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-            widget.onNavigateUp();
-            return KeyEventResult.handled;
-          } else if (event.logicalKey == LogicalKeyboardKey.select ||
+          if (event.logicalKey == LogicalKeyboardKey.select ||
               event.logicalKey == LogicalKeyboardKey.enter ||
               event.logicalKey == LogicalKeyboardKey.gameButtonSelect) {
             int nextVal = 0;
-            if (widget.value == 0)
+            if (widget.value == 0) {
               nextVal = 1;
-            else if (widget.value == 1)
+            } else if (widget.value == 1) {
               nextVal = 3;
-            else if (widget.value == 3)
+            } else if (widget.value == 3) {
               nextVal = 7;
-            else
+            } else {
               nextVal = 0;
+            }
             widget.onChanged(nextVal);
             return KeyEventResult.handled;
           }
@@ -688,13 +948,15 @@ class _FocusableDropdownState extends State<_FocusableDropdown> {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: _hasFocus ? const Color(0xFF1D3039) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          color: _hasFocus ? const Color(0xFF1D3039) : const Color(0xFF15212A),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: _hasFocus ? const Color(0xFF5DE0C2) : Colors.white24,
-            width: _hasFocus ? 2 : 1,
+            color: _hasFocus
+                ? const Color(0xFF5DE0C2)
+                : Colors.white.withValues(alpha: 0.08),
+            width: 2,
           ),
         ),
         child: Row(
@@ -747,9 +1009,7 @@ class _FocusableActionButtonState extends State<_FocusableActionButton> {
   @override
   Widget build(BuildContext context) {
     return Focus(
-      onFocusChange: (focused) {
-        setState(() => _hasFocus = focused);
-      },
+      onFocusChange: (focused) => setState(() => _hasFocus = focused),
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
           if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
@@ -781,7 +1041,12 @@ class _FocusableActionButtonState extends State<_FocusableActionButton> {
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
             side: BorderSide.none,
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            minimumSize: const Size(220, 54),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            alignment: Alignment.centerLeft,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
           icon: Icon(
             widget.icon,
@@ -829,9 +1094,7 @@ class _FocusableCategoryTileState extends State<_FocusableCategoryTile> {
   Widget build(BuildContext context) {
     return Focus(
       focusNode: widget.focusNode,
-      onFocusChange: (focused) {
-        setState(() => _hasFocus = focused);
-      },
+      onFocusChange: (focused) => setState(() => _hasFocus = focused),
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
           if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {

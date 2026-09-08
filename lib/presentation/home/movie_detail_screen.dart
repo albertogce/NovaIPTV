@@ -65,7 +65,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) =>
-            PlayerScreen(streamUrl: url, channelName: widget.movie.title),
+            PlayerScreen(streamUrl: url, channelName: widget.movie.title, progressId: 'movie:${widget.movie.movieId}'),
       ),
     );
   }
