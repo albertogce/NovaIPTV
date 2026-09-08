@@ -1,0 +1,882 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:iptv_flutter/core/storage/shared_prefs_storage.dart';
+import 'package:iptv_flutter/data/models/live_category.dart';
+import 'package:iptv_flutter/data/models/vod_category.dart';
+import 'package:iptv_flutter/data/models/series_category.dart';
+import 'package:iptv_flutter/data/api/xtream_api_client.dart';
+
+class SettingsScreen extends StatefulWidget {
+  final XtreamApiClient client;
+  final List<LiveCategory> liveCategories;
+  final List<VodCategory> vodCategories;
+  final List<SeriesCategory> seriesCategories;
+  final VoidCallback onSettingsSaved;
+
+  const SettingsScreen({
+    super.key,
+    required this.client,
+    required this.liveCategories,
+    required this.vodCategories,
+    required this.seriesCategories,
+    required this.onSettingsSaved,
+  });
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final storage = SharedPrefsStorage();
+
+  // IPTV Credentials
+  late TextEditingController _urlController;
+  late TextEditingController _userController;
+  late TextEditingController _passController;
+
+  final FocusNode _urlFocusNode = FocusNode();
+  final FocusNode _userFocusNode = FocusNode();
+  final FocusNode _passFocusNode = FocusNode();
+  final FocusNode _dropdownFocusNode = FocusNode();
+  final List<FocusNode> _firstCategoryFocusNodes = [
+    FocusNode(),
+    FocusNode(),
+    FocusNode(),
+  ];
+
+  // Auto-refresh in days (1, 3, 7 days; 0 = nunca)
+  int _autoRefreshDays = 0;
+
+  // Live Categories ordering & visibility
+  late List<LiveCategory> _liveCats;
+  late Set<String> _hiddenLiveCatIds;
+
+  // VOD Categories ordering & visibility
+  late List<VodCategory> _vodCats;
+  late Set<String> _hiddenVodCatIds;
+
+  // Series Categories ordering & visibility
+  late List<SeriesCategory> _seriesCats;
+  late Set<String> _hiddenSeriesCatIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+
+    _urlController = TextEditingController(
+      text:
+          storage.getString('server') ??
+          storage.getString('server_url') ??
+          widget.client.baseUrl,
+    );
+    _userController = TextEditingController(
+      text: storage.getString('username') ?? widget.client.username,
+    );
+    _passController = TextEditingController(
+      text: storage.getString('password') ?? widget.client.password,
+    );
+
+    _urlController.addListener(_autoSaveCredentials);
+    _userController.addListener(_autoSaveCredentials);
+    _passController.addListener(_autoSaveCredentials);
+
+    final refreshVal = storage.getString('settings_auto_refresh_days');
+    if (refreshVal != null) {
+      _autoRefreshDays = int.tryParse(refreshVal) ?? 0;
+    } else {
+      final oldMinStr = storage.getString('settings_auto_refresh_minutes');
+      if (oldMinStr != null) {
+        final min = int.tryParse(oldMinStr) ?? 0;
+        _autoRefreshDays = (min / 1440).round();
+      }
+    }
+
+    _initCategories();
+  }
+
+  void _initCategories() {
+    final hiddenLive = storage.getStringList('settings_live_cat_hidden') ?? [];
+    _hiddenLiveCatIds = hiddenLive.toSet();
+    final liveOrder = storage.getStringList('settings_live_cat_order') ?? [];
+    _liveCats = List.from(widget.liveCategories);
+    if (liveOrder.isNotEmpty) {
+      _liveCats.sort((a, b) {
+        final indexA = liveOrder.indexOf(a.categoryId.toString());
+        final indexB = liveOrder.indexOf(b.categoryId.toString());
+        if (indexA == -1 && indexB == -1) return 0;
+        if (indexA == -1) return 1;
+        if (indexB == -1) return -1;
+        return indexA.compareTo(indexB);
+      });
+    }
+
+    final hiddenVod = storage.getStringList('settings_vod_cat_hidden') ?? [];
+    _hiddenVodCatIds = hiddenVod.toSet();
+    final vodOrder = storage.getStringList('settings_vod_cat_order') ?? [];
+    _vodCats = List.from(widget.vodCategories);
+    if (vodOrder.isNotEmpty) {
+      _vodCats.sort((a, b) {
+        final indexA = vodOrder.indexOf(a.categoryId.toString());
+        final indexB = vodOrder.indexOf(b.categoryId.toString());
+        if (indexA == -1 && indexB == -1) return 0;
+        if (indexA == -1) return 1;
+        if (indexB == -1) return -1;
+        return indexA.compareTo(indexB);
+      });
+    }
+
+    final hiddenSeries =
+        storage.getStringList('settings_series_cat_hidden') ?? [];
+    _hiddenSeriesCatIds = hiddenSeries.toSet();
+    final seriesOrder =
+        storage.getStringList('settings_series_cat_order') ?? [];
+    _seriesCats = List.from(widget.seriesCategories);
+    if (seriesOrder.isNotEmpty) {
+      _seriesCats.sort((a, b) {
+        final indexA = seriesOrder.indexOf(a.categoryId.toString());
+        final indexB = seriesOrder.indexOf(b.categoryId.toString());
+        if (indexA == -1 && indexB == -1) return 0;
+        if (indexA == -1) return 1;
+        if (indexB == -1) return -1;
+        return indexA.compareTo(indexB);
+      });
+    }
+  }
+
+  void _autoSaveCredentials() async {
+    final newUrl = _urlController.text.trim();
+    await storage.setString('server', newUrl);
+    await storage.setString('server_url', newUrl);
+    await storage.setString('username', _userController.text.trim());
+    await storage.setString('password', _passController.text.trim());
+  }
+
+  Future<void> _updateAutoRefreshDays(int days) async {
+    setState(() => _autoRefreshDays = days);
+    await storage.setString('settings_auto_refresh_days', days.toString());
+    await storage.setString(
+      'settings_auto_refresh_minutes',
+      (days * 1440).toString(),
+    );
+  }
+
+  Future<void> _saveCategoriesLive() async {
+    await storage.setStringList(
+      'settings_live_cat_hidden',
+      _hiddenLiveCatIds.toList(),
+    );
+    await storage.setStringList(
+      'settings_live_cat_order',
+      _liveCats.map((e) => e.categoryId.toString()).toList(),
+    );
+  }
+
+  Future<void> _saveCategoriesVod() async {
+    await storage.setStringList(
+      'settings_vod_cat_hidden',
+      _hiddenVodCatIds.toList(),
+    );
+    await storage.setStringList(
+      'settings_vod_cat_order',
+      _vodCats.map((e) => e.categoryId.toString()).toList(),
+    );
+  }
+
+  Future<void> _saveCategoriesSeries() async {
+    await storage.setStringList(
+      'settings_series_cat_hidden',
+      _hiddenSeriesCatIds.toList(),
+    );
+    await storage.setStringList(
+      'settings_series_cat_order',
+      _seriesCats.map((e) => e.categoryId.toString()).toList(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _urlController.removeListener(_autoSaveCredentials);
+    _userController.removeListener(_autoSaveCredentials);
+    _passController.removeListener(_autoSaveCredentials);
+    _tabController.dispose();
+    _urlController.dispose();
+    _userController.dispose();
+    _passController.dispose();
+    _urlFocusNode.dispose();
+    _userFocusNode.dispose();
+    _passFocusNode.dispose();
+    _dropdownFocusNode.dispose();
+    for (final node in _firstCategoryFocusNodes) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
+  KeyEventResult _handleFieldKeyEvent(
+    FocusNode node,
+    KeyEvent event,
+    FocusNode? nextNode,
+    FocusNode? prevNode,
+  ) {
+    if (event is KeyDownEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        if (nextNode != null) {
+          nextNode.requestFocus();
+          return KeyEventResult.handled;
+        }
+      } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        if (prevNode != null) {
+          prevNode.requestFocus();
+          return KeyEventResult.handled;
+        }
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _switchTab(int delta) {
+    int nextIndex = _tabController.index + delta;
+    if (nextIndex >= 0 && nextIndex < _tabController.length) {
+      setState(() {
+        _tabController.animateTo(nextIndex);
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _firstCategoryFocusNodes[nextIndex].requestFocus();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      onPopInvokedWithResult: (_, __) {
+        widget.onSettingsSaved();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0B1117),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSectionHeader('Credenciales IPTV'),
+              const SizedBox(height: 12),
+              _buildCard([
+                Focus(
+                  onKeyEvent: (node, event) =>
+                      _handleFieldKeyEvent(node, event, _userFocusNode, null),
+                  child: TextFormField(
+                    controller: _urlController,
+                    focusNode: _urlFocusNode,
+                    autofocus: true,
+                    textInputAction: TextInputAction.next,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'URL Servidor',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      prefixIcon: Icon(Icons.link, color: Color(0xFF5DE0C2)),
+                      border: OutlineInputBorder(),
+                    ),
+                    onFieldSubmitted: (_) => _userFocusNode.requestFocus(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Focus(
+                  onKeyEvent: (node, event) => _handleFieldKeyEvent(
+                    node,
+                    event,
+                    _passFocusNode,
+                    _urlFocusNode,
+                  ),
+                  child: TextFormField(
+                    controller: _userController,
+                    focusNode: _userFocusNode,
+                    textInputAction: TextInputAction.next,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Usuario',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      prefixIcon: Icon(Icons.person, color: Color(0xFF5DE0C2)),
+                      border: OutlineInputBorder(),
+                    ),
+                    onFieldSubmitted: (_) => _passFocusNode.requestFocus(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Focus(
+                  onKeyEvent: (node, event) => _handleFieldKeyEvent(
+                    node,
+                    event,
+                    _dropdownFocusNode,
+                    _userFocusNode,
+                  ),
+                  child: TextFormField(
+                    controller: _passController,
+                    focusNode: _passFocusNode,
+                    textInputAction: TextInputAction.next,
+                    obscureText: true,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Contraseña',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      prefixIcon: Icon(Icons.lock, color: Color(0xFF5DE0C2)),
+                      border: OutlineInputBorder(),
+                    ),
+                    onFieldSubmitted: (_) => _dropdownFocusNode.requestFocus(),
+                  ),
+                ),
+              ]),
+
+              const SizedBox(height: 28),
+              _buildSectionHeader('Actualización Automática'),
+              const SizedBox(height: 12),
+              _buildCard([
+                _FocusableDropdown(
+                  focusNode: _dropdownFocusNode,
+                  value: _autoRefreshDays,
+                  onChanged: (val) {
+                    if (val != null) {
+                      _updateAutoRefreshDays(val);
+                    }
+                  },
+                  onNavigateUp: () => _passFocusNode.requestFocus(),
+                ),
+              ]),
+
+              const SizedBox(height: 28),
+              _buildSectionHeader('Gestión de Categorías'),
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF15212A),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    TabBar(
+                      controller: _tabController,
+                      indicatorColor: const Color(0xFF5DE0C2),
+                      labelColor: const Color(0xFF5DE0C2),
+                      unselectedLabelColor: Colors.white60,
+                      tabs: const [
+                        Tab(text: 'En Vivo'),
+                        Tab(text: 'Películas'),
+                        Tab(text: 'Series'),
+                      ],
+                    ),
+                    SizedBox(
+                      height: 380,
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _buildLiveCategoryTab(),
+                          _buildVodCategoryTab(),
+                          _buildSeriesCategoryTab(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+  }
+
+  Widget _buildCard(List<Widget> children) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF15212A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+
+  Widget _buildCategoryHeaderButtons({
+    required VoidCallback onShowAll,
+    required VoidCallback onHideAll,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: _FocusableActionButton(
+              label: 'Mostrar Todos',
+              icon: Icons.visibility,
+              onPressed: onShowAll,
+              onSideTabChange: _switchTab,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _FocusableActionButton(
+              label: 'Ocultar Todos',
+              icon: Icons.visibility_off,
+              onPressed: onHideAll,
+              onSideTabChange: _switchTab,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLiveCategoryTab() {
+    if (_liveCats.isEmpty) {
+      return const Center(
+        child: Text(
+          'No hay categorías',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        _buildCategoryHeaderButtons(
+          onShowAll: () {
+            setState(() {
+              _hiddenLiveCatIds.clear();
+            });
+            _saveCategoriesLive();
+          },
+          onHideAll: () {
+            setState(() {
+              _hiddenLiveCatIds = _liveCats
+                  .map((c) => c.categoryId.toString())
+                  .toSet();
+            });
+            _saveCategoriesLive();
+          },
+        ),
+        const Divider(color: Colors.white12, height: 1),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _liveCats.length,
+            itemBuilder: (context, index) {
+              final cat = _liveCats[index];
+              final idStr = cat.categoryId.toString();
+              final isVisible = !_hiddenLiveCatIds.contains(idStr);
+
+              return _FocusableCategoryTile(
+                key: ValueKey(idStr),
+                focusNode: index == 0 ? _firstCategoryFocusNodes[0] : null,
+                title: cat.categoryName,
+                value: isVisible,
+                onSideTabChange: _switchTab,
+                onChanged: (val) {
+                  setState(() {
+                    if (val) {
+                      _hiddenLiveCatIds.remove(idStr);
+                    } else {
+                      _hiddenLiveCatIds.add(idStr);
+                    }
+                  });
+                  _saveCategoriesLive();
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVodCategoryTab() {
+    if (_vodCats.isEmpty) {
+      return const Center(
+        child: Text(
+          'No hay categorías',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        _buildCategoryHeaderButtons(
+          onShowAll: () {
+            setState(() {
+              _hiddenVodCatIds.clear();
+            });
+            _saveCategoriesVod();
+          },
+          onHideAll: () {
+            setState(() {
+              _hiddenVodCatIds = _vodCats
+                  .map((c) => c.categoryId.toString())
+                  .toSet();
+            });
+            _saveCategoriesVod();
+          },
+        ),
+        const Divider(color: Colors.white12, height: 1),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _vodCats.length,
+            itemBuilder: (context, index) {
+              final cat = _vodCats[index];
+              final idStr = cat.categoryId.toString();
+              final isVisible = !_hiddenVodCatIds.contains(idStr);
+
+              return _FocusableCategoryTile(
+                key: ValueKey(idStr),
+                focusNode: index == 0 ? _firstCategoryFocusNodes[1] : null,
+                title: cat.categoryName,
+                value: isVisible,
+                onSideTabChange: _switchTab,
+                onChanged: (val) {
+                  setState(() {
+                    if (val) {
+                      _hiddenVodCatIds.remove(idStr);
+                    } else {
+                      _hiddenVodCatIds.add(idStr);
+                    }
+                  });
+                  _saveCategoriesVod();
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSeriesCategoryTab() {
+    if (_seriesCats.isEmpty) {
+      return const Center(
+        child: Text(
+          'No hay categorías',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        _buildCategoryHeaderButtons(
+          onShowAll: () {
+            setState(() {
+              _hiddenSeriesCatIds.clear();
+            });
+            _saveCategoriesSeries();
+          },
+          onHideAll: () {
+            setState(() {
+              _hiddenSeriesCatIds = _seriesCats
+                  .map((c) => c.categoryId.toString())
+                  .toSet();
+            });
+            _saveCategoriesSeries();
+          },
+        ),
+        const Divider(color: Colors.white12, height: 1),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _seriesCats.length,
+            itemBuilder: (context, index) {
+              final cat = _seriesCats[index];
+              final idStr = cat.categoryId.toString();
+              final isVisible = !_hiddenSeriesCatIds.contains(idStr);
+
+              return _FocusableCategoryTile(
+                key: ValueKey(idStr),
+                focusNode: index == 0 ? _firstCategoryFocusNodes[2] : null,
+                title: cat.categoryName,
+                value: isVisible,
+                onSideTabChange: _switchTab,
+                onChanged: (val) {
+                  setState(() {
+                    if (val) {
+                      _hiddenSeriesCatIds.remove(idStr);
+                    } else {
+                      _hiddenSeriesCatIds.add(idStr);
+                    }
+                  });
+                  _saveCategoriesSeries();
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FocusableDropdown extends StatefulWidget {
+  final FocusNode focusNode;
+  final int value;
+  final ValueChanged<int?> onChanged;
+  final VoidCallback onNavigateUp;
+
+  const _FocusableDropdown({
+    required this.focusNode,
+    required this.value,
+    required this.onChanged,
+    required this.onNavigateUp,
+  });
+
+  @override
+  State<_FocusableDropdown> createState() => _FocusableDropdownState();
+}
+
+class _FocusableDropdownState extends State<_FocusableDropdown> {
+  bool _hasFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focusNode.addListener(() {
+      if (mounted) {
+        setState(() => _hasFocus = widget.focusNode.hasFocus);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: widget.focusNode,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            widget.onNavigateUp();
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.gameButtonSelect) {
+            int nextVal = 0;
+            if (widget.value == 0)
+              nextVal = 1;
+            else if (widget.value == 1)
+              nextVal = 3;
+            else if (widget.value == 3)
+              nextVal = 7;
+            else
+              nextVal = 0;
+            widget.onChanged(nextVal);
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        decoration: BoxDecoration(
+          color: _hasFocus ? const Color(0xFF1D3039) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: _hasFocus ? const Color(0xFF5DE0C2) : Colors.white24,
+            width: _hasFocus ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Intervalo de actualización',
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+            DropdownButton<int>(
+              value: widget.value,
+              dropdownColor: const Color(0xFF15212A),
+              underline: const SizedBox(),
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+              items: const [
+                DropdownMenuItem(value: 0, child: Text('Nunca')),
+                DropdownMenuItem(value: 1, child: Text('Cada 1 Día')),
+                DropdownMenuItem(value: 3, child: Text('Cada 3 Días')),
+                DropdownMenuItem(value: 7, child: Text('Cada 7 Días')),
+              ],
+              onChanged: widget.onChanged,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FocusableActionButton extends StatefulWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final ValueChanged<int>? onSideTabChange;
+
+  const _FocusableActionButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.onSideTabChange,
+  });
+
+  @override
+  State<_FocusableActionButton> createState() => _FocusableActionButtonState();
+}
+
+class _FocusableActionButtonState extends State<_FocusableActionButton> {
+  bool _hasFocus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      onFocusChange: (focused) {
+        setState(() => _hasFocus = focused);
+      },
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+            widget.onSideTabChange?.call(-1);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+            widget.onSideTabChange?.call(1);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.gameButtonSelect) {
+            widget.onPressed();
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: _hasFocus ? const Color(0xFF5DE0C2) : Colors.white24,
+            width: _hasFocus ? 2 : 1,
+          ),
+          color: _hasFocus ? const Color(0xFF1D3039) : Colors.transparent,
+        ),
+        child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: BorderSide.none,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+          icon: Icon(
+            widget.icon,
+            size: 18,
+            color: _hasFocus ? const Color(0xFF5DE0C2) : Colors.white,
+          ),
+          label: Text(
+            widget.label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: _hasFocus ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          onPressed: widget.onPressed,
+        ),
+      ),
+    );
+  }
+}
+
+class _FocusableCategoryTile extends StatefulWidget {
+  final String title;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final ValueChanged<int>? onSideTabChange;
+  final FocusNode? focusNode;
+
+  const _FocusableCategoryTile({
+    super.key,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.onSideTabChange,
+    this.focusNode,
+  });
+
+  @override
+  State<_FocusableCategoryTile> createState() => _FocusableCategoryTileState();
+}
+
+class _FocusableCategoryTileState extends State<_FocusableCategoryTile> {
+  bool _hasFocus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: widget.focusNode,
+      onFocusChange: (focused) {
+        setState(() => _hasFocus = focused);
+      },
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+            widget.onSideTabChange?.call(-1);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+            widget.onSideTabChange?.call(1);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.gameButtonSelect) {
+            widget.onChanged(!widget.value);
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: _hasFocus ? const Color(0xFF1D3039) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: _hasFocus ? const Color(0xFF5DE0C2) : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: SwitchListTile(
+          title: Text(
+            widget.title,
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: _hasFocus ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          value: widget.value,
+          activeThumbColor: const Color(0xFF5DE0C2),
+          secondary: Icon(
+            Icons.visibility,
+            color: _hasFocus ? const Color(0xFF5DE0C2) : Colors.white38,
+          ),
+          onChanged: (val) => widget.onChanged(val),
+        ),
+      ),
+    );
+  }
+}
