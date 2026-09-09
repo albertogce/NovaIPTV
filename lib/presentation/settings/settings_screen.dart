@@ -11,7 +11,7 @@ class SettingsScreen extends StatefulWidget {
   final List<LiveCategory> liveCategories;
   final List<VodCategory> vodCategories;
   final List<SeriesCategory> seriesCategories;
-  final VoidCallback onSettingsSaved;
+  final ValueChanged<XtreamApiClient> onSettingsSaved;
 
   const SettingsScreen({
     super.key,
@@ -52,11 +52,12 @@ class _SettingsScreenState extends State<SettingsScreen>
   double _scale = 1.0;
   int _density = 0;
   bool _contrast = false;
+  bool _storeVisibleOnly = false;
 
   final Map<String, String> _colors = <String, String>{
-    'ROJO': 'favorites',
-    'VERDE': 'search',
-    'AMARILLO': 'live',
+    'ROJO': 'none',
+    'VERDE': 'none',
+    'AMARILLO': 'none',
     'AZUL': 'none',
   };
 
@@ -119,6 +120,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     _density =
         int.tryParse(storage.getString('settings_grid_density') ?? '') ?? 0;
     _contrast = storage.getBool('settings_high_contrast') ?? false;
+    _storeVisibleOnly = storage.getBool('settings_store_visible_only') ?? false;
 
     final savedColors = storage.getStringList('settings_color_actions') ?? [];
     var i = 0;
@@ -185,6 +187,17 @@ class _SettingsScreenState extends State<SettingsScreen>
     await storage.setString('server_url', newUrl);
     await storage.setString('username', _userController.text.trim());
     await storage.setString('password', _passController.text.trim());
+  }
+
+  void _notifySettingsSaved() {
+    storage.setStringList('settings_color_actions', _colors.values.toList());
+    widget.onSettingsSaved(
+      XtreamApiClient(
+        baseUrl: _urlController.text.trim(),
+        username: _userController.text.trim(),
+        password: _passController.text.trim(),
+      ),
+    );
   }
 
   Future<void> _updateAutoRefreshDays(int days) async {
@@ -292,7 +305,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget build(BuildContext context) {
     return PopScope(
       onPopInvokedWithResult: (_, __) {
-        widget.onSettingsSaved();
+        _notifySettingsSaved();
       },
       child: Scaffold(
         backgroundColor: const Color(0xFF0B1117),
@@ -508,7 +521,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       style: TextStyle(color: Colors.white),
                     ),
                     value: _contrast,
-                    activeColor: const Color(0xFF5DE0C2),
+                    activeThumbColor: const Color(0xFF5DE0C2),
                     onChanged: (value) {
                       setState(() => _contrast = value);
                       storage.setBool('settings_high_contrast', value);
@@ -536,6 +549,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                     if (val != null) {
                       _updateAutoRefreshDays(val);
                     }
+                  },
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  title: const Text(
+                    'Guardar solo el contenido visible',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  subtitle: const Text(
+                    'Reduce el almacenamiento local usando las categorías mostradas.',
+                    style: TextStyle(color: Colors.white60),
+                  ),
+                  value: _storeVisibleOnly,
+                  activeThumbColor: const Color(0xFF5DE0C2),
+                  onChanged: (value) async {
+                    setState(() => _storeVisibleOnly = value);
+                    await storage.setBool('settings_store_visible_only', value);
                   },
                 ),
 

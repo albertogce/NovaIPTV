@@ -20,9 +20,8 @@ class MovieDetail {
   });
 
   factory MovieDetail.fromJson(Map<String, dynamic> json) {
-    final tags = (json['tags'] as List?)
-        ?.map((t) => t.toString())
-        .toList() ?? [];
+    final tags =
+        (json['tags'] as List?)?.map((t) => t.toString()).toList() ?? [];
 
     return MovieDetail(
       movieId: json['movie_id'] ?? 0,

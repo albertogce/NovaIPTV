@@ -2,27 +2,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:iptv_flutter/core/utils/url_normalizer.dart';
 import 'package:iptv_flutter/core/storage/shared_prefs_storage.dart';
 import 'package:iptv_flutter/data/models/iptv_user_info.dart';
-import 'package:iptv_flutter/data/api/xtream_api_client.dart';
 
 final authStateProvider = StateNotifierProvider<AuthController, AuthState>((
   ref,
 ) {
-  return AuthController(
-    storage: SharedPrefsStorage(),
-    apiClient: XtreamApiClient(baseUrl: '', username: '', password: ''),
-  );
+  return AuthController(storage: SharedPrefsStorage());
 });
 
 class AuthController extends StateNotifier<AuthState> {
   final SharedPrefsStorage _storage;
-  final XtreamApiClient _apiClient;
-
-  AuthController({
-    required SharedPrefsStorage storage,
-    required XtreamApiClient apiClient,
-  }) : _storage = storage,
-       _apiClient = apiClient,
-       super(AuthState.initial());
+  AuthController({required SharedPrefsStorage storage})
+    : _storage = storage,
+      super(AuthState.initial());
 
   Future<void> login(String server, String username, String password) async {
     state = AuthState.loading();

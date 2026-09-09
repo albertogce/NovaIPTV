@@ -209,10 +209,15 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
     keys.sort((a, b) {
       final numericA = int.tryParse(a);
       final numericB = int.tryParse(b);
-      if (numericA != null && numericB != null)
+      if (numericA != null && numericB != null) {
         return numericA.compareTo(numericB);
-      if (numericA != null) return -1;
-      if (numericB != null) return 1;
+      }
+      if (numericA != null) {
+        return -1;
+      }
+      if (numericB != null) {
+        return 1;
+      }
       return a.compareTo(b);
     });
     return keys;

@@ -5,9 +5,23 @@ class EpgProgram {
   final String description;
   final DateTime start;
   final DateTime end;
-  const EpgProgram({required this.title, required this.description, required this.start, required this.end});
-  bool get isLive { final now = DateTime.now(); return !now.isBefore(start) && now.isBefore(end); }
-  double get progress => isLive ? ((DateTime.now().difference(start).inMilliseconds / end.difference(start).inMilliseconds).clamp(0, 1)).toDouble() : 0;
+  const EpgProgram({
+    required this.title,
+    required this.description,
+    required this.start,
+    required this.end,
+  });
+  bool get isLive {
+    final now = DateTime.now();
+    return !now.isBefore(start) && now.isBefore(end);
+  }
+
+  double get progress => isLive
+      ? ((DateTime.now().difference(start).inMilliseconds /
+                    end.difference(start).inMilliseconds)
+                .clamp(0, 1))
+            .toDouble()
+      : 0;
   factory EpgProgram.fromJson(Map<String, dynamic> json) {
     DateTime parse(dynamic value) {
       if (value is num) {
@@ -30,7 +44,9 @@ class EpgProgram {
     return EpgProgram(
       title: clean(json['title'] ?? json['name'] ?? 'Sin título'),
       description: clean(json['description'] ?? json['desc'] ?? ''),
-      start: parse(json['start'] ?? json['start_timestamp'] ?? json['start_time']),
+      start: parse(
+        json['start'] ?? json['start_timestamp'] ?? json['start_time'],
+      ),
       end: parse(json['end'] ?? json['stop_timestamp'] ?? json['stop_time']),
     );
   }

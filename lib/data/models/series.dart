@@ -25,7 +25,8 @@ class Series {
     return Series(
       seriesId: parseInt(json['series_id']),
       title: (json['name'] ?? json['title'] ?? '').toString(),
-      logo: (json['cover'] ?? json['logo'] ?? json['stream_icon'] ?? '').toString(),
+      logo: (json['cover'] ?? json['logo'] ?? json['stream_icon'] ?? '')
+          .toString(),
       category: (json['category_name'] ?? json['category'] ?? '').toString(),
       categoryId: (json['category_id'] ?? '').toString(),
       year: parseInt(json['year']),
@@ -33,11 +34,11 @@ class Series {
   }
 
   Map<String, dynamic> toJson() => {
-        'series_id': seriesId,
-        'name': title,
-        'cover': logo,
-        'category_name': category,
-        'category_id': categoryId,
-        'year': year,
-      };
+    'series_id': seriesId,
+    'name': title,
+    'cover': logo,
+    'category_name': category,
+    'category_id': categoryId,
+    'year': year,
+  };
 }

@@ -6,7 +6,6 @@ class PlaybackManager {
   factory PlaybackManager() => _instance;
 
   bool _isPlaying = false;
-  String? _currentStreamUrl;
 
   bool get isPlaying => _isPlaying;
 
@@ -16,16 +15,12 @@ class PlaybackManager {
     }
 
     _isPlaying = true;
-    _currentStreamUrl = streamUrl;
-
     // Simulación de inicio de reproducción
     await Future.delayed(const Duration(seconds: 2));
   }
 
   Future<void> stopPlayback() async {
     _isPlaying = false;
-    _currentStreamUrl = null;
-
     // Simulación de detención
     await Future.delayed(const Duration(seconds: 1));
   }

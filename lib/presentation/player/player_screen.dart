@@ -1,3 +1,7 @@
+// ignore_for_file: curly_braces_in_flow_control_structures
+
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -37,8 +41,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _isInitialized = false;
   bool _hasError = false;
   String _errorMessage = '';
+  String _lastAttemptedUrl = '';
   bool _showControls = true;
   bool _isClosing = false;
+  int _connectionAttempt = 0;
   late int _queueIndex;
   late String _currentChannelName;
 
@@ -63,19 +69,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _initPlayer() async {
+    final connectionAttempt = ++_connectionAttempt;
+    VideoPlayerController? controller;
     try {
       final item = widget.queue.isEmpty ? null : widget.queue[_queueIndex];
+      // Xtream providers commonly require the stream extension.
       final url = item?.streamUrl ?? widget.streamUrl;
-      final controller = VideoPlayerController.networkUrl(
+      _lastAttemptedUrl = url;
+      controller = VideoPlayerController.networkUrl(
         Uri.parse(url),
-        httpHeaders: const {'User-Agent': 'IPTV-Flutter/1.0'},
+        httpHeaders: const {'User-Agent': 'IPTV-Flutter/1.0', 'Accept': '*/*'},
       );
       _controller = controller;
       await controller.initialize();
-      if (!mounted) return;
+      if (!mounted || _isClosing || connectionAttempt != _connectionAttempt) {
+        await controller.dispose();
+        return;
+      }
       setState(() => _isInitialized = true);
       controller.addListener(_saveProgress);
-      final saved = widget.progressId == null ? null : WatchProgressStore().get(widget.progressId!);
+      final saved = widget.progressId == null
+          ? null
+          : WatchProgressStore().get(widget.progressId!);
       if (saved != null && saved.position < controller.value.duration) {
         await controller.seekTo(saved.position);
       }
@@ -84,9 +99,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (mounted) setState(() => _showControls = false);
       });
     } catch (e) {
-      await _controller?.dispose();
-      _controller = null;
-      if (mounted) {
+      if (identical(_controller, controller)) {
+        _controller = null;
+      }
+      await controller?.dispose();
+      if (widget.queue.isEmpty &&
+          connectionAttempt == 1 &&
+          (widget.streamUrl.endsWith('.ts') ||
+              widget.streamUrl.endsWith('.m3u8'))) {
+        developer.log(
+          'Reintentando el canal con una URL sin extensión',
+          name: 'PlayerScreen',
+        );
+        if (mounted && !_isClosing) {
+          await _initPlayer();
+          return;
+        }
+      }
+      if (mounted && !_isClosing && connectionAttempt == _connectionAttempt) {
         setState(() {
           _hasError = true;
           _errorMessage = 'No se pudo reproducir el canal.\n$e';
@@ -96,10 +126,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _saveProgress() async {
-    if (widget.progressId == null || _controller == null || !_controller!.value.isInitialized) return;
+    if (widget.progressId == null ||
+        _controller == null ||
+        !_controller!.value.isInitialized)
+      return;
     final value = _controller!.value;
     if (value.duration.inSeconds < 1 || value.position.inSeconds < 2) return;
-    await WatchProgressStore().save(WatchProgress(id: widget.progressId!, title: _currentChannelName, position: value.position, duration: value.duration, updatedAt: DateTime.now()));
+    await WatchProgressStore().save(
+      WatchProgress(
+        id: widget.progressId!,
+        title: _currentChannelName,
+        position: value.position,
+        duration: value.duration,
+        updatedAt: DateTime.now(),
+      ),
+    );
   }
 
   void _toggleControls() {
@@ -164,14 +205,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
     await _initPlayer();
   }
 
-  void _closePlayer() {
+  Future<void> _closePlayer() async {
     if (_isClosing || !mounted) return;
     _isClosing = true;
-    Navigator.of(context).pop();
+    _connectionAttempt++;
+    final controller = _controller;
+    _controller = null;
+    await controller?.dispose();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _retryPlayer() async {
+    if (_isClosing) return;
+    _connectionAttempt++;
+    final controller = _controller;
+    _controller = null;
+    await controller?.dispose();
+    if (!mounted) return;
+    setState(() {
+      _isInitialized = false;
+      _hasError = false;
+      _errorMessage = '';
+      _showControls = true;
+    });
+    await _initPlayer();
   }
 
   @override
   void dispose() {
+    _isClosing = true;
+    _connectionAttempt++;
     _saveProgress();
     _focusNode.dispose();
     _progressFocusNode.dispose();
@@ -184,7 +247,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: true,
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _closePlayer();
+      },
       child: Scaffold(
         backgroundColor: Colors.black,
         body: Focus(
@@ -193,8 +259,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           onKeyEvent: (node, event) {
             if (event is! KeyDownEvent) return KeyEventResult.ignored;
             if (event.logicalKey == LogicalKeyboardKey.goBack) {
-              // Android TV dispatches this key together with the system back action.
-              // Let PopScope handle the route pop exactly once.
+              // PopScope closes the player after releasing the video controller.
               return KeyEventResult.ignored;
             }
             if (event.logicalKey == LogicalKeyboardKey.escape) {
@@ -240,7 +305,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     ),
                   )
                 else if (_hasError)
-                  _ErrorView(message: _errorMessage, onBack: _closePlayer)
+                  _ErrorView(
+                    message: _errorMessage,
+                    url: _lastAttemptedUrl,
+                    onBack: _closePlayer,
+                    onRetry: _retryPlayer,
+                  )
                 else
                   const Center(
                     child: Column(
@@ -386,18 +456,37 @@ class _ControlsOverlay extends StatelessWidget {
             autofocus: true,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Row(children: [
-                Text(_formatDuration(position), style: const TextStyle(color: Colors.white, fontSize: 12)),
-                const SizedBox(width: 8),
-                Expanded(child: Slider(
-                  min: 0,
-                  max: duration.inMilliseconds > 0 ? duration.inMilliseconds.toDouble() : 1,
-                  value: position.inMilliseconds.clamp(0, duration.inMilliseconds > 0 ? duration.inMilliseconds : 1).toDouble(),
-                  onChanged: (value) => onSeek(Duration(milliseconds: value.round())),
-                )),
-                const SizedBox(width: 8),
-                Text(_formatDuration(duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
-              ],
+              child: Row(
+                children: [
+                  Text(
+                    _formatDuration(position),
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Slider(
+                      min: 0,
+                      max: duration.inMilliseconds > 0
+                          ? duration.inMilliseconds.toDouble()
+                          : 1,
+                      value: position.inMilliseconds
+                          .clamp(
+                            0,
+                            duration.inMilliseconds > 0
+                                ? duration.inMilliseconds
+                                : 1,
+                          )
+                          .toDouble(),
+                      onChanged: (value) =>
+                          onSeek(Duration(milliseconds: value.round())),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _formatDuration(duration),
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
               ),
             ),
           ),
@@ -426,13 +515,21 @@ class _ControlsOverlay extends StatelessWidget {
   }
 }
 
-String _formatDuration(Duration value) => '${value.inMinutes.remainder(60).toString().padLeft(2, '0')}:${value.inSeconds.remainder(60).toString().padLeft(2, '0')}';
+String _formatDuration(Duration value) =>
+    '${value.inMinutes.remainder(60).toString().padLeft(2, '0')}:${value.inSeconds.remainder(60).toString().padLeft(2, '0')}';
 
 class _ErrorView extends StatelessWidget {
   final String message;
+  final String url;
   final VoidCallback onBack;
+  final VoidCallback onRetry;
 
-  const _ErrorView({required this.message, required this.onBack});
+  const _ErrorView({
+    required this.message,
+    required this.url,
+    required this.onBack,
+    required this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -463,10 +560,27 @@ class _ErrorView extends StatelessWidget {
               style: const TextStyle(color: Colors.white54, fontSize: 13),
             ),
             const SizedBox(height: 24),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.arrow_back),
-              label: const Text('Volver'),
-              onPressed: onBack,
+            SelectableText(
+              'URL intentada:\n$url',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Reintentar'),
+                  onPressed: onRetry,
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Volver'),
+                  onPressed: onBack,
+                ),
+              ],
             ),
           ],
         ),

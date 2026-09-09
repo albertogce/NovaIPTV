@@ -36,12 +36,12 @@ class VodMovie {
   }
 
   Map<String, dynamic> toJson() => {
-        'stream_id': movieId,
-        'name': title,
-        'stream_icon': logo,
-        'category_name': category,
-        'category_id': categoryId,
-        'year': year,
-        'url': url,
-      };
+    'stream_id': movieId,
+    'name': title,
+    'stream_icon': logo,
+    'category_name': category,
+    'category_id': categoryId,
+    'year': year,
+    'url': url,
+  };
 }

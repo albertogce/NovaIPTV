@@ -2,10 +2,7 @@ class LiveCategory {
   final String categoryId;
   final String categoryName;
 
-  LiveCategory({
-    required this.categoryId,
-    required this.categoryName,
-  });
+  LiveCategory({required this.categoryId, required this.categoryName});
 
   factory LiveCategory.fromJson(Map<String, dynamic> json) {
     return LiveCategory(
@@ -15,7 +12,7 @@ class LiveCategory {
   }
 
   Map<String, dynamic> toJson() => {
-        'category_id': categoryId,
-        'category_name': categoryName,
-      };
+    'category_id': categoryId,
+    'category_name': categoryName,
+  };
 }

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:iptv_flutter/data/models/series_episode.dart';
 
 class SeriesSeason {

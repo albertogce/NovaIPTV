@@ -43,11 +43,6 @@ class SharedPrefsStorage {
     await _prefs?.remove(key);
   }
 
-  Future<File> _cacheFile(String key) async {
-    final directory = Directory('${Directory.systemTemp.path}/nova_iptv');
-    return File('${directory.path}/$key.json');
-  }
-
   Future<void> setCacheString(String key, String value) async {
     final file = await _cacheFile(key);
     await file.parent.create(recursive: true);
@@ -58,5 +53,10 @@ class SharedPrefsStorage {
     final file = await _cacheFile(key);
     if (!await file.exists()) return null;
     return file.readAsString();
+  }
+
+  Future<File> _cacheFile(String key) async {
+    final directory = Directory('${Directory.systemTemp.path}/nova_iptv');
+    return File('${directory.path}/$key.json');
   }
 }

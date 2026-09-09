@@ -1,4 +1,4 @@
-package com.example.iptv_flutter
+package com.algoce95.novaiptv
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -2,10 +2,7 @@ class SeriesCategory {
   final String categoryId;
   final String categoryName;
 
-  SeriesCategory({
-    required this.categoryId,
-    required this.categoryName,
-  });
+  SeriesCategory({required this.categoryId, required this.categoryName});
 
   factory SeriesCategory.fromJson(Map<String, dynamic> json) {
     return SeriesCategory(
@@ -15,7 +12,7 @@ class SeriesCategory {
   }
 
   Map<String, dynamic> toJson() => {
-        'category_id': categoryId,
-        'category_name': categoryName,
-      };
+    'category_id': categoryId,
+    'category_name': categoryName,
+  };
 }

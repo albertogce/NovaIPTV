@@ -1,3 +1,5 @@
+// ignore_for_file: curly_braces_in_flow_control_structures, avoid_print
+
 import 'package:dio/dio.dart';
 import 'package:iptv_flutter/core/utils/url_normalizer.dart';
 

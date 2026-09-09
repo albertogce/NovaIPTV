@@ -23,32 +23,28 @@ class _LiveChannelCardState extends State<LiveChannelCard> {
     super.initState();
     if (widget.channel.currentEpgTitle.isNotEmpty) {
       _epgTitle = widget.channel.currentEpgTitle;
-    } else {
-      _loadEpg();
     }
+    _loadEpg();
   }
 
   Future<void> _loadEpg() async {
-    if (!mounted) return;
+    if (!mounted || widget.channel.channelId <= 0) return;
     setState(() => _loadingEpg = true);
     try {
       final data = await widget.client.getShortEpg(
         streamId: widget.channel.channelId,
       );
-      final epgList = data['epg_listings'] as List<dynamic>?;
-      if (epgList != null && epgList.isNotEmpty) {
-        final current = epgList.first as Map<String, dynamic>;
-        final rawTitle = current['title'] ?? current['now_playing'] ?? '';
-        if (mounted) {
-          setState(() {
-            _epgTitle = LiveChannel.cleanEpgTitle(rawTitle);
-            _loadingEpg = false;
-          });
-        }
-      } else {
-        if (mounted) setState(() => _loadingEpg = false);
-      }
+      final programs = (data['epg_listings'] as List? ?? [])
+          .whereType<Map>()
+          .map((item) => EpgProgram.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+      if (!mounted || programs.isEmpty) return;
+      final current = programs.where((program) => program.isLive).firstOrNull;
+      final title = (current ?? programs.first).title;
+      if (title.isNotEmpty) setState(() => _epgTitle = title);
     } catch (_) {
+      // La tarjeta conserva el título recibido en el listado si la consulta falla.
+    } finally {
       if (mounted) setState(() => _loadingEpg = false);
     }
   }
@@ -100,16 +96,13 @@ class _LiveChannelCardState extends State<LiveChannelCard> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4.0),
-              child: Text(
-                widget.channel.channelName,
-                textAlign: TextAlign.center,
+              child: _MarqueeText(
+                text: widget.channel.channelName,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(height: 2),
@@ -151,6 +144,91 @@ class _LiveChannelCardState extends State<LiveChannelCard> {
             child: Icon(Icons.star, color: Color(0xFFFFC857), size: 18),
           ),
       ],
+    );
+  }
+}
+
+class _MarqueeText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+
+  const _MarqueeText({required this.text, required this.style});
+
+  @override
+  State<_MarqueeText> createState() => _MarqueeTextState();
+}
+
+class _MarqueeTextState extends State<_MarqueeText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 7),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(text: widget.text, style: widget.style),
+          maxLines: 1,
+          textDirection: Directionality.of(context),
+        )..layout();
+        final overflow = painter.width - constraints.maxWidth;
+
+        if (overflow <= 0) {
+          return Text(
+            widget.text,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            style: widget.style,
+          );
+        }
+
+        const gap = 32.0;
+        return SizedBox(
+          height: painter.height,
+          child: ClipRect(
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) => Transform.translate(
+                offset: Offset(-(painter.width + gap) * _controller.value, 0),
+                child: child,
+              ),
+              child: OverflowBox(
+                alignment: Alignment.centerLeft,
+                minWidth: 0,
+                maxWidth: double.infinity,
+                minHeight: painter.height,
+                maxHeight: painter.height,
+                child: SizedBox(
+                  width: painter.width * 2 + gap + 24,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(widget.text, maxLines: 1, style: widget.style),
+                      const SizedBox(width: gap),
+                      Text(widget.text, maxLines: 1, style: widget.style),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -211,6 +289,7 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
   // FocusNode for the first grid item so we can focus it programmatically
   final FocusNode _gridFirstItemFocusNode = FocusNode();
   final Map<String, FocusNode> _sidebarCategoryFocusNodes = {};
+  final Map<String, FocusNode> _horizontalCategoryFocusNodes = {};
   final ValueNotifier<String?> _focusedSidebarCategoryId = ValueNotifier(null);
 
   FocusNode _sidebarFocusNodeFor(String? categoryId) {
@@ -271,6 +350,9 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
     _gridFirstItemFocusNode.dispose();
     _focusedSidebarCategoryId.dispose();
     for (final node in _sidebarCategoryFocusNodes.values) {
+      node.dispose();
+    }
+    for (final node in _horizontalCategoryFocusNodes.values) {
       node.dispose();
     }
     super.dispose();
@@ -458,6 +540,10 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
                   return Padding(
                     padding: const EdgeInsets.only(right: 8.0),
                     child: Focus(
+                      focusNode: _horizontalCategoryFocusNodes.putIfAbsent(
+                        catId?.toString() ?? '__all__',
+                        FocusNode.new,
+                      ),
                       onKeyEvent: (node, event) {
                         if (event is KeyDownEvent &&
                             (event.logicalKey == LogicalKeyboardKey.select ||

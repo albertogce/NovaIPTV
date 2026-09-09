@@ -10,6 +10,7 @@ class HomeCenterDashboard extends StatefulWidget {
   final VoidCallback onSelectSeries;
   final VoidCallback onSelectContinueWatching;
   final VoidCallback onSelectSettings;
+  final VoidCallback onRefresh;
   // Global search
   final String globalSearchQuery;
   final ValueChanged<String> onGlobalSearchChanged;
@@ -33,6 +34,7 @@ class HomeCenterDashboard extends StatefulWidget {
     required this.onSelectSeries,
     required this.onSelectContinueWatching,
     required this.onSelectSettings,
+    required this.onRefresh,
     required this.globalSearchQuery,
     required this.onGlobalSearchChanged,
     required this.allChannels,
@@ -117,6 +119,23 @@ class _HomeCenterDashboardState extends State<HomeCenterDashboard> {
               crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    _DashboardActionButton(
+                      icon: Icons.refresh,
+                      tooltip: 'Actualizar',
+                      onPressed: widget.onRefresh,
+                    ),
+                    const SizedBox(width: 10),
+                    _DashboardActionButton(
+                      icon: Icons.settings_outlined,
+                      tooltip: 'Ajustes',
+                      onPressed: widget.onSelectSettings,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
                 Wrap(
                   alignment: WrapAlignment.center,
                   spacing: 10,
@@ -334,6 +353,28 @@ class _HomeCenterDashboardState extends State<HomeCenterDashboard> {
       ),
     );
   }
+}
+
+class _DashboardActionButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  const _DashboardActionButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    onPressed: onPressed,
+    tooltip: tooltip,
+    icon: Icon(icon, size: 20, color: Colors.white70),
+    padding: EdgeInsets.zero,
+    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+    visualDensity: VisualDensity.compact,
+  );
 }
 
 class _TvSearchDialog extends StatefulWidget {
@@ -895,10 +936,8 @@ class _PosterContent extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(9, 8, 9, 9),
-          child: Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+          child: _MarqueeText(
+            text: title,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 12,
@@ -943,15 +982,13 @@ class _HistoryCard extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.all(7),
-              child: Text(
-                entry.title,
+              child: _MarqueeText(
+                text: entry.title,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -1008,10 +1045,8 @@ class _ContinueWatchingCard extends StatelessWidget {
                     ),
                   ),
           ),
-          Text(
-            progress.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+          _MarqueeText(
+            text: progress.title,
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),

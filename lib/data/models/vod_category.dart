@@ -2,10 +2,7 @@ class VodCategory {
   final String categoryId;
   final String categoryName;
 
-  VodCategory({
-    required this.categoryId,
-    required this.categoryName,
-  });
+  VodCategory({required this.categoryId, required this.categoryName});
 
   factory VodCategory.fromJson(Map<String, dynamic> json) {
     return VodCategory(
@@ -15,7 +12,7 @@ class VodCategory {
   }
 
   Map<String, dynamic> toJson() => {
-        'category_id': categoryId,
-        'category_name': categoryName,
-      };
+    'category_id': categoryId,
+    'category_name': categoryName,
+  };
 }

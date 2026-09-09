@@ -22,6 +22,72 @@ class SearchResultsScreen extends StatefulWidget {
   State<SearchResultsScreen> createState() => _SearchResultsScreenState();
 }
 
+class _MarqueeText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  const _MarqueeText({required this.text, required this.style});
+  @override
+  State<_MarqueeText> createState() => _MarqueeTextState();
+}
+
+class _MarqueeTextState extends State<_MarqueeText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 7),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final painter = TextPainter(
+        text: TextSpan(text: widget.text, style: widget.style),
+        maxLines: 1,
+        textDirection: Directionality.of(context),
+      )..layout();
+      final overflow = painter.width - constraints.maxWidth;
+      if (overflow <= 0) return Text(widget.text, style: widget.style);
+      const gap = 32.0;
+      return SizedBox(
+        height: painter.height,
+        child: ClipRect(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (_, child) => Transform.translate(
+              offset: Offset(-(painter.width + gap) * _controller.value, 0),
+              child: child,
+            ),
+            child: OverflowBox(
+              alignment: Alignment.centerLeft,
+              minWidth: 0,
+              maxWidth: double.infinity,
+              minHeight: painter.height,
+              maxHeight: painter.height,
+              child: SizedBox(
+                width: painter.width * 2 + gap + 24,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(widget.text, style: widget.style, maxLines: 1),
+                    const SizedBox(width: gap),
+                    Text(widget.text, style: widget.style, maxLines: 1),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class _SearchResultsScreenState extends State<SearchResultsScreen>
     with SingleTickerProviderStateMixin {
   late final List<_SearchTab> _tabs;
@@ -208,17 +274,18 @@ class _SearchGrid extends StatelessWidget {
       itemCount: tab.items.length,
       itemBuilder: (context, index) {
         final item = tab.items[index];
-        final isChannel = item is LiveChannel;
-        final title = isChannel
-            ? (item as LiveChannel).channelName
-            : item is VodMovie
-            ? item.title
-            : (item as Series).title;
-        final image = isChannel
-            ? (item as LiveChannel).channelLogo
-            : item is VodMovie
-            ? item.logo
-            : (item as Series).logo;
+        final title = switch (item) {
+          LiveChannel channel => channel.channelName,
+          VodMovie movie => movie.title,
+          Series series => series.title,
+          _ => '',
+        };
+        final image = switch (item) {
+          LiveChannel channel => channel.channelLogo,
+          VodMovie movie => movie.logo,
+          Series series => series.logo,
+          _ => '',
+        };
         return _SearchGridCard(
           title: title,
           imageUrl: image,
@@ -297,10 +364,8 @@ class _SearchGridCardState extends State<_SearchGridCard> {
               ),
               Padding(
                 padding: const EdgeInsets.all(4),
-                child: Text(
-                  widget.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: _MarqueeText(
+                  text: widget.title,
                   style: const TextStyle(color: Colors.white, fontSize: 12),
                 ),
               ),

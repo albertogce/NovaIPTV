@@ -10,6 +10,7 @@ import 'package:iptv_flutter/data/models/series.dart';
 import 'package:iptv_flutter/data/models/live_category.dart';
 import 'package:iptv_flutter/data/models/vod_category.dart';
 import 'package:iptv_flutter/data/models/series_category.dart';
+import 'package:iptv_flutter/data/models/epg_program.dart';
 import 'package:iptv_flutter/presentation/player/player_screen.dart';
 import 'package:iptv_flutter/presentation/home/movie_detail_screen.dart';
 import 'package:iptv_flutter/presentation/home/series_detail_screen.dart';
@@ -36,6 +37,7 @@ class HomeScreen extends StatefulWidget {
 const _favoritesCategoryId = '__favorites__';
 
 class _HomeScreenState extends State<HomeScreen> {
+  late XtreamApiClient _client;
   ActiveView _activeView = ActiveView.home;
 
   List<LiveChannel> _liveChannels = [];
@@ -69,6 +71,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _client = widget.client;
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _loadData();
     _startAutoRefreshTimer();
@@ -76,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _autoRefreshTimer?.cancel();
     for (final node in _favoriteFocusNodes.values) {
       node.dispose();
@@ -200,6 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
         cachedLiveCats == null ||
         cachedVodCats == null ||
         cachedSeriesCats == null) {
+      debugPrint('Caché IPTV no disponible; se solicitarán los datos remotos.');
       return false;
     }
 
@@ -233,31 +239,54 @@ class _HomeScreenState extends State<HomeScreen> {
       _vodCategories = List.of(_allVodCategories);
       _seriesCategories = List.of(_allSeriesCategories);
 
-      return _liveChannels.isNotEmpty ||
-          _movies.isNotEmpty ||
-          _series.isNotEmpty;
+      final hasContent =
+          _liveChannels.isNotEmpty || _movies.isNotEmpty || _series.isNotEmpty;
+      debugPrint(
+        hasContent
+            ? 'Caché IPTV cargada; no se solicitan listados remotos.'
+            : 'Caché IPTV vacía; se solicitarán los datos remotos.',
+      );
+      return hasContent;
     } catch (_) {
+      debugPrint('Caché IPTV inválida; se solicitarán los datos remotos.');
       return false;
     }
   }
 
   Future<void> _fetchAndCacheRemoteData({bool silent = false}) async {
     try {
+      Future<List<dynamic>> loadListSafely(
+        String name,
+        Future<List<dynamic>> request,
+      ) async {
+        try {
+          return await request;
+        } catch (error) {
+          debugPrint(
+            'No se pudo cargar $name; se continuará sin esos datos: $error',
+          );
+          return <dynamic>[];
+        }
+      }
+
       final results = await Future.wait([
-        widget.client.getLiveStreams(),
-        widget.client.getVodStreams(),
-        widget.client.getSeries(),
-        widget.client.getLiveCategories(),
-        widget.client.getVodCategories(),
-        widget.client.getSeriesCategories(),
+        loadListSafely('canales en vivo', _client.getLiveStreams()),
+        loadListSafely('películas', _client.getVodStreams()),
+        loadListSafely('series', _client.getSeries()),
+        loadListSafely(
+          'categorías de canales en vivo',
+          _client.getLiveCategories(),
+        ),
+        loadListSafely('categorías de películas', _client.getVodCategories()),
+        loadListSafely('categorías de series', _client.getSeriesCategories()),
       ]);
 
-      final rawChannels = results[0] as List<dynamic>;
-      final rawMovies = results[1] as List<dynamic>;
-      final rawSeries = results[2] as List<dynamic>;
-      final rawLiveCats = results[3] as List<dynamic>;
-      final rawVodCats = results[4] as List<dynamic>;
-      final rawSeriesCats = results[5] as List<dynamic>;
+      final rawChannels = results[0];
+      final rawMovies = results[1];
+      final rawSeries = results[2];
+      final rawLiveCats = results[3];
+      final rawVodCats = results[4];
+      final rawSeriesCats = results[5];
 
       final channelsParsed = rawChannels
           .map((e) => LiveChannel.fromJson(Map<String, dynamic>.from(e)))
@@ -278,18 +307,55 @@ class _HomeScreenState extends State<HomeScreen> {
           .map((e) => SeriesCategory.fromJson(Map<String, dynamic>.from(e)))
           .toList();
 
+      // A manual refresh deliberately keeps the complete response on disk.
+      // Automatic refreshes can use the compact mode selected in Settings.
       final storage = SharedPrefsStorage();
+      final compactCache =
+          storage.getBool('settings_store_visible_only') ?? false;
+      List<T> keepVisible<T>(
+        List<T> items,
+        String Function(T) categoryId,
+        Set<String> hidden,
+      ) {
+        if (!compactCache) return items;
+        return items
+            .where((item) => !hidden.contains(categoryId(item)))
+            .toList();
+      }
+
+      final hiddenLive =
+          (storage.getStringList('settings_live_cat_hidden') ?? []).toSet();
+      final hiddenVod = (storage.getStringList('settings_vod_cat_hidden') ?? [])
+          .toSet();
+      final hiddenSeries =
+          (storage.getStringList('settings_series_cat_hidden') ?? []).toSet();
+      final channelsToCache = keepVisible(
+        channelsParsed,
+        (item) => item.categoryId.toString(),
+        hiddenLive,
+      );
+      final moviesToCache = keepVisible(
+        moviesParsed,
+        (item) => item.categoryId.toString(),
+        hiddenVod,
+      );
+      final seriesToCache = keepVisible(
+        seriesParsed,
+        (item) => item.categoryId.toString(),
+        hiddenSeries,
+      );
+
       await storage.setCacheString(
         'cache_live_channels',
-        json.encode(channelsParsed.map((e) => e.toJson()).toList()),
+        json.encode(channelsToCache.map((e) => e.toJson()).toList()),
       );
       await storage.setCacheString(
         'cache_movies',
-        json.encode(moviesParsed.map((e) => e.toJson()).toList()),
+        json.encode(moviesToCache.map((e) => e.toJson()).toList()),
       );
       await storage.setCacheString(
         'cache_series',
-        json.encode(seriesParsed.map((e) => e.toJson()).toList()),
+        json.encode(seriesToCache.map((e) => e.toJson()).toList()),
       );
       await storage.setCacheString(
         'cache_live_categories',
@@ -330,8 +396,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _buildStreamUrl(LiveChannel channel) {
-    final base = widget.client.baseUrl.replaceAll(RegExp(r'/$'), '');
-    return '$base/${widget.client.username}/${widget.client.password}/${channel.channelId}';
+    final base = _client.baseUrl.replaceAll(RegExp(r'/$'), '');
+    return '$base/live/${_client.username}/${_client.password}/${channel.channelId}.ts';
   }
 
   void _onChannelTap(LiveChannel channel, ActiveView sourceView) {
@@ -355,7 +421,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onMovieTap(VodMovie movie) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MovieDetailScreen(movie: movie, client: widget.client),
+        builder: (_) => MovieDetailScreen(movie: movie, client: _client),
       ),
     );
   }
@@ -363,8 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onSeriesTap(Series series) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            SeriesDetailScreen(series: series, client: widget.client),
+        builder: (_) => SeriesDetailScreen(series: series, client: _client),
       ),
     );
   }
@@ -503,6 +568,80 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _openLiveChannels() {
+    final hasFavorites = _liveChannels.any((channel) => channel.isFavorite);
+    setState(() {
+      _selectedLiveCatId = hasFavorites
+          ? _favoritesCategoryId
+          : (_liveCategories.isNotEmpty
+                ? _liveCategories.first.categoryId.toString()
+                : null);
+      _activeView = ActiveView.live;
+    });
+  }
+
+  KeyEventResult _handleColorKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final logicalKeyId = event.logicalKey.keyId;
+    // Android normally exposes key codes to Flutter with the Android
+    // 0x100000000 prefix, but some TV firmwares/ADB versions expose the raw
+    // value instead.
+    final keyCode = logicalKeyId >= 0x100000000
+        ? logicalKeyId - 0x100000000
+        : logicalKeyId;
+    final label = event.logicalKey.keyLabel.toLowerCase();
+    final color = label.contains('red') || label.contains('rojo')
+        ? 'ROJO'
+        : label.contains('green') || label.contains('verde')
+        ? 'VERDE'
+        : label.contains('yellow') || label.contains('amarillo')
+        ? 'AMARILLO'
+        : label.contains('blue') || label.contains('azul')
+        ? 'AZUL'
+        : switch (keyCode) {
+            183 => 'ROJO',
+            184 => 'VERDE',
+            185 => 'AMARILLO',
+            186 => 'AZUL',
+            _ => null,
+          };
+    if (color == null) return KeyEventResult.ignored;
+
+    final actions =
+        SharedPrefsStorage().getStringList('settings_color_actions') ?? [];
+    final action = actions.elementAtOrNull(
+      ['ROJO', 'VERDE', 'AMARILLO', 'AZUL'].indexOf(color),
+    );
+    switch (action) {
+      case 'favorites':
+        _navigateTo(ActiveView.favorites);
+      case 'live':
+        _openLiveChannels();
+      case 'movies':
+        _navigateTo(ActiveView.movies);
+      case 'series':
+        _navigateTo(ActiveView.series);
+      case 'search':
+        _navigateTo(ActiveView.home);
+      default:
+        return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
+  }
+
+  bool _handleHardwareKey(KeyEvent event) {
+    return _handleColorKey(event) == KeyEventResult.handled;
+  }
+
+  Future<void> _removeContinueWatching(WatchProgress progress) async {
+    await WatchProgressStore().remove(progress.id);
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Eliminado de Seguir viendo: ${progress.title}')),
+    );
+  }
+
   List<LiveChannel> _orderedFavoriteChannels(List<LiveChannel> channels) {
     final favoriteIds =
         SharedPrefsStorage().getStringList('favorite_channels') ?? [];
@@ -521,28 +660,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (_errorMessage != null) {
       return Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.error_outline,
-                color: Colors.redAccent,
-                size: 48,
-              ),
-              const SizedBox(height: 12),
-              SelectableText(
-                _errorMessage!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => _loadData(forceRefresh: true),
-                child: const Text('Reintentar'),
-              ),
-            ],
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  color: Colors.redAccent,
+                  size: 48,
+                ),
+                const SizedBox(height: 12),
+                SelectableText(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => _loadData(forceRefresh: true),
+                  child: const Text('Reintentar'),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -583,12 +726,13 @@ class _HomeScreenState extends State<HomeScreen> {
           totalMovies: visibleMovies.length,
           totalSeries: visibleSeries.length,
           totalFavorites: favChannels.length,
-          onSelectLive: () => _navigateTo(ActiveView.live),
+          onSelectLive: _openLiveChannels,
           onSelectMovies: () => _navigateTo(ActiveView.movies),
           onSelectSeries: () => _navigateTo(ActiveView.series),
           onSelectContinueWatching: () =>
               _navigateTo(ActiveView.continueWatching),
           onSelectSettings: () => _navigateTo(ActiveView.settings),
+          onRefresh: () => _loadData(forceRefresh: true),
           globalSearchQuery: _globalSearchQuery,
           onGlobalSearchChanged: (q) => setState(() => _globalSearchQuery = q),
           allChannels: visibleLiveChannels,
@@ -617,17 +761,24 @@ class _HomeScreenState extends State<HomeScreen> {
           onChannelTap: (ch) => _onChannelTap(ch, ActiveView.home),
           onMovieTap: _onMovieTap,
           onSeriesTap: _onSeriesTap,
-          client: widget.client,
+          client: _client,
         );
       case ActiveView.settings:
         return SettingsScreen(
-          client: widget.client,
+          client: _client,
           liveCategories: _allLiveCategories,
           vodCategories: _allVodCategories,
           seriesCategories: _allSeriesCategories,
-          onSettingsSaved: () {
+          onSettingsSaved: (newClient) {
+            final credentialsChanged =
+                newClient.baseUrl != _client.baseUrl ||
+                newClient.username != _client.username ||
+                newClient.password != _client.password;
+            _client = newClient;
             _startAutoRefreshTimer();
-            _loadData(forceRefresh: false);
+            // Only a changed IPTV account invalidates the current data.
+            // Category and appearance changes continue using the local cache.
+            _loadData(forceRefresh: credentialsChanged);
             _navigateTo(ActiveView.home);
           },
         );
@@ -635,7 +786,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return GridViewContentView<LiveChannel>(
           items: orderedFavChannels,
           itemBuilder: (channel) =>
-              LiveChannelCard(channel: channel, client: widget.client),
+              LiveChannelCard(channel: channel, client: _client),
           onTap: (channel) => _onChannelTap(channel, ActiveView.live),
           onLongPress: (channel) => _toggleFavoriteChannel(channel),
           onReorder: _reorderFavoriteChannels,
@@ -733,6 +884,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (series != null) _onSeriesTap(series);
             }
           },
+          onLongPress: _removeContinueWatching,
         );
       case ActiveView.live:
         final catFiltered = _selectedLiveCatId == _favoritesCategoryId
@@ -782,10 +934,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => EpgGuideScreen(
-                    client: widget.client,
-                    channels: _liveChannels,
-                  ),
+                  builder: (_) =>
+                      EpgGuideScreen(client: _client, channels: _liveChannels),
                 ),
               ),
             ),
@@ -796,7 +946,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
           itemBuilder: (channel) =>
-              LiveChannelCard(channel: channel, client: widget.client),
+              LiveChannelCard(channel: channel, client: _client),
           onTap: (channel) => _onChannelTap(channel, ActiveView.live),
           onLongPress: (channel) => _toggleFavoriteChannel(channel),
           onReorder: isFavSelected ? _reorderFavoriteChannels : null,
@@ -903,7 +1053,13 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         }
       },
-      child: Scaffold(body: SafeArea(child: _buildBody())),
+      child: Focus(
+        // This Focus only listens to bubbled events. It must not take the
+        // initial focus away from the dashboard and its D-pad controls.
+        canRequestFocus: false,
+        onKeyEvent: (node, event) => _handleColorKey(event),
+        child: Scaffold(body: SafeArea(child: _buildBody())),
+      ),
     );
   }
 }
