@@ -434,7 +434,13 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
                           return KeyEventResult.handled;
                         }
                         if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                          _gridFirstItemFocusNode.requestFocus();
+                          if (widget.items.isNotEmpty) {
+                            _gridFirstItemFocusNode.requestFocus();
+                          } else if (widget.categoriesOnSide) {
+                            _focusSelectedSidebarCategory();
+                          } else {
+                            widget.onBack();
+                          }
                           return KeyEventResult.handled;
                         }
                         if (event.logicalKey == LogicalKeyboardKey.arrowRight &&

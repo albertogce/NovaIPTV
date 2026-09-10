@@ -7,6 +7,7 @@ class WatchProgress {
   final Duration position;
   final Duration duration;
   final DateTime updatedAt;
+  final String? episodeId;
 
   const WatchProgress({
     required this.id,
@@ -14,6 +15,7 @@ class WatchProgress {
     required this.position,
     required this.duration,
     required this.updatedAt,
+    this.episodeId,
   });
 
   double get fraction => duration.inMilliseconds <= 0
@@ -27,6 +29,7 @@ class WatchProgress {
     'position': position.inMilliseconds,
     'duration': duration.inMilliseconds,
     'updatedAt': updatedAt.toIso8601String(),
+    if (episodeId != null) 'episodeId': episodeId,
   };
   factory WatchProgress.fromJson(Map<String, dynamic> json) => WatchProgress(
     id: json['id'].toString(),
@@ -36,11 +39,13 @@ class WatchProgress {
     updatedAt:
         DateTime.tryParse(json['updatedAt']?.toString() ?? '') ??
         DateTime.now(),
+    episodeId: json['episodeId']?.toString(),
   );
 }
 
 class WatchProgressStore {
   static const _key = 'watch_progress_v1';
+  static Future<void> _writeQueue = Future.value();
   final SharedPrefsStorage storage;
   WatchProgressStore([SharedPrefsStorage? storage])
     : storage = storage ?? SharedPrefsStorage();
@@ -65,21 +70,31 @@ class WatchProgressStore {
   }
 
   Future<void> save(WatchProgress item) async {
-    final items = getAll()
-      ..removeWhere((e) => e.id == item.id)
-      ..insert(0, item);
-    if (items.length > 100) items.removeRange(100, items.length);
-    await storage.setString(
-      _key,
-      json.encode(items.map((e) => e.toJson()).toList()),
-    );
+    await _enqueue(() async {
+      final items = getAll()
+        ..removeWhere((e) => e.id == item.id)
+        ..insert(0, item);
+      if (items.length > 100) items.removeRange(100, items.length);
+      await storage.setString(
+        _key,
+        json.encode(items.map((e) => e.toJson()).toList()),
+      );
+    });
   }
 
   Future<void> remove(String id) async {
-    final items = getAll()..removeWhere((item) => item.id == id);
-    await storage.setString(
-      _key,
-      json.encode(items.map((e) => e.toJson()).toList()),
-    );
+    await _enqueue(() async {
+      final items = getAll()..removeWhere((item) => item.id == id);
+      await storage.setString(
+        _key,
+        json.encode(items.map((e) => e.toJson()).toList()),
+      );
+    });
+  }
+
+  Future<void> _enqueue(Future<void> Function() operation) {
+    final next = _writeQueue.then((_) => operation());
+    _writeQueue = next.catchError((_) {});
+    return next;
   }
 }

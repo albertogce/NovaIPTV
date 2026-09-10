@@ -68,6 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     'live': 'Canales en vivo',
     'movies': 'Películas',
     'series': 'Series',
+    'continueWatching': 'Seguir viendo',
   };
 
   // Live Categories ordering & visibility

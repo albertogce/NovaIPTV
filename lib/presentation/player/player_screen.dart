@@ -5,13 +5,19 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../core/playback/watch_progress_store.dart';
 
 class PlayerQueueItem {
   final String streamUrl;
   final String title;
+  final String? episodeId;
 
-  const PlayerQueueItem({required this.streamUrl, required this.title});
+  const PlayerQueueItem({
+    required this.streamUrl,
+    required this.title,
+    this.episodeId,
+  });
 }
 
 class PlayerScreen extends StatefulWidget {
@@ -47,6 +53,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   int _connectionAttempt = 0;
   late int _queueIndex;
   late String _currentChannelName;
+  String? _currentEpisodeId;
+  bool _advancingToNext = false;
 
   final FocusNode _focusNode = FocusNode();
   final FocusNode _progressFocusNode = FocusNode();
@@ -65,6 +73,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    // Keep the device awake while the player is open, including Android TV.
+    WakelockPlus.enable();
     _initPlayer();
   }
 
@@ -75,6 +85,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final item = widget.queue.isEmpty ? null : widget.queue[_queueIndex];
       // Xtream providers commonly require the stream extension.
       final url = item?.streamUrl ?? widget.streamUrl;
+      _currentEpisodeId = item?.episodeId;
       _lastAttemptedUrl = url;
       controller = VideoPlayerController.networkUrl(
         Uri.parse(url),
@@ -87,7 +98,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         return;
       }
       setState(() => _isInitialized = true);
-      controller.addListener(_saveProgress);
+      controller.addListener(_onControllerUpdate);
       final saved = widget.progressId == null
           ? null
           : WatchProgressStore().get(widget.progressId!);
@@ -139,8 +150,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
         position: value.position,
         duration: value.duration,
         updatedAt: DateTime.now(),
+        episodeId: _currentEpisodeId,
       ),
     );
+  }
+
+  void _onControllerUpdate() {
+    _saveProgress();
+    if (_advancingToNext || widget.queue.isEmpty || !_isInitialized) return;
+    final value = _controller?.value;
+    if (value == null || !value.isInitialized || value.duration.inSeconds < 1)
+      return;
+    if (value.position >= value.duration - const Duration(milliseconds: 500) &&
+        _queueIndex < widget.queue.length - 1) {
+      _advancingToNext = true;
+      _changeQueueItem(1).whenComplete(() => _advancingToNext = false);
+    }
   }
 
   void _toggleControls() {
@@ -200,6 +225,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _hasError = false;
       _errorMessage = '';
       _showControls = true;
+      _currentEpisodeId = widget.queue[nextIndex].episodeId;
     });
     widget.onQueueIndexChanged?.call(nextIndex);
     await _initPlayer();
@@ -239,6 +265,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _focusNode.dispose();
     _progressFocusNode.dispose();
     _controller?.dispose();
+    WakelockPlus.disable();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     super.dispose();

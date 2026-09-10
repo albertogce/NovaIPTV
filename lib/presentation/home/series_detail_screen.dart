@@ -114,6 +114,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
           (episode) => PlayerQueueItem(
             streamUrl: _episodeStreamUrl(episode),
             title: '${widget.series.title} - ${_episodeTitle(episode)}',
+            episodeId: (episode['id'] ?? episode['stream_id']).toString(),
           ),
         )
         .toList();
@@ -128,7 +129,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         builder: (_) => PlayerScreen(
           streamUrl: streamUrl,
           channelName: '${widget.series.title} - $epTitle',
-          progressId: 'episode:$parsedEpisodeId',
+          progressId: 'series:${widget.series.seriesId}',
           queue: queue,
           initialQueueIndex: validQueueIndex,
           onQueueIndexChanged: (index) {

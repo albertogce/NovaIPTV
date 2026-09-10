@@ -543,7 +543,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _favoriteFocusNodes[movedItem.channelId]?.requestFocus();
+        final focusNode = _favoriteFocusNodes[movedItem.channelId];
+        focusNode?.requestFocus();
+        final itemContext = focusNode?.context;
+        if (itemContext != null) {
+          Scrollable.ensureVisible(
+            itemContext,
+            alignment: .5,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+          );
+        }
       }
     });
   }
@@ -621,6 +631,8 @@ class _HomeScreenState extends State<HomeScreen> {
         _navigateTo(ActiveView.movies);
       case 'series':
         _navigateTo(ActiveView.series);
+      case 'continueWatching':
+        _navigateTo(ActiveView.continueWatching);
       case 'search':
         _navigateTo(ActiveView.home);
       default:
@@ -862,7 +874,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 : null;
             final series = movie == null
                 ? visibleSeries
-                      .where((s) => p.title.startsWith(s.title))
+                      .where((s) => p.id == 'series:${s.seriesId}')
                       .firstOrNull
                 : null;
             return _ContinueWatchingCard(
@@ -879,7 +891,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (movie != null) _onMovieTap(movie);
             } else {
               final series = visibleSeries
-                  .where((s) => p.title.startsWith(s.title))
+                  .where((s) => p.id == 'series:${s.seriesId}')
                   .firstOrNull;
               if (series != null) _onSeriesTap(series);
             }

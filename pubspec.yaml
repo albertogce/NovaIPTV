@@ -13,6 +13,7 @@ dependencies:
   dio: ^5.11.1
   shared_preferences: ^2.5.5
   video_player: ^2.9.2
+  wakelock_plus: ^1.4.0
 
 dev_dependencies:
   flutter_test:
