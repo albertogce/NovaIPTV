@@ -400,13 +400,33 @@ class _HomeScreenState extends State<HomeScreen> {
     return '$base/live/${_client.username}/${_client.password}/${channel.channelId}.ts';
   }
 
-  void _onChannelTap(LiveChannel channel, ActiveView sourceView) {
-    final url = _buildStreamUrl(channel);
+  void _onChannelTap(
+    LiveChannel channel,
+    ActiveView sourceView, {
+    List<LiveChannel>? zapQueue,
+  }) {
+    // ponytail: reuse the episode queue for live zapping (prev/next + CH+/-).
+    final channels = zapQueue ?? [channel];
+    final queue = channels
+        .map(
+          (c) => PlayerQueueItem(
+            streamUrl: _buildStreamUrl(c),
+            title: c.channelName,
+          ),
+        )
+        .toList();
+    var index = channels.indexWhere((c) => c.channelId == channel.channelId);
+    if (index < 0) index = 0;
     Navigator.of(context)
         .push(
           MaterialPageRoute(
-            builder: (_) =>
-                PlayerScreen(streamUrl: url, channelName: channel.channelName),
+            builder: (_) => PlayerScreen(
+              streamUrl: queue[index].streamUrl,
+              channelName: queue[index].title,
+              queue: queue,
+              initialQueueIndex: index,
+              isLive: true,
+            ),
           ),
         )
         .then((_) {
@@ -426,10 +446,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _onSeriesTap(Series series) {
+  void _onSeriesTap(Series series, {String? initialEpisodeId}) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SeriesDetailScreen(series: series, client: _client),
+        builder: (_) => SeriesDetailScreen(
+          series: series,
+          client: _client,
+          initialEpisodeId: initialEpisodeId,
+        ),
       ),
     );
   }
@@ -763,14 +787,22 @@ class _HomeScreenState extends State<HomeScreen> {
             );
             if (!mounted || result == null) return;
             if (result is LiveChannel) {
-              _onChannelTap(result, ActiveView.home);
+              _onChannelTap(
+                result,
+                ActiveView.home,
+                zapQueue: visibleLiveChannels,
+              );
             } else if (result is VodMovie) {
               _onMovieTap(result);
             } else if (result is Series) {
               _onSeriesTap(result);
             }
           },
-          onChannelTap: (ch) => _onChannelTap(ch, ActiveView.home),
+          onChannelTap: (ch) => _onChannelTap(
+            ch,
+            ActiveView.home,
+            zapQueue: visibleLiveChannels,
+          ),
           onMovieTap: _onMovieTap,
           onSeriesTap: _onSeriesTap,
           client: _client,
@@ -799,7 +831,11 @@ class _HomeScreenState extends State<HomeScreen> {
           items: orderedFavChannels,
           itemBuilder: (channel) =>
               LiveChannelCard(channel: channel, client: _client),
-          onTap: (channel) => _onChannelTap(channel, ActiveView.live),
+          onTap: (channel) => _onChannelTap(
+            channel,
+            ActiveView.live,
+            zapQueue: orderedFavChannels,
+          ),
           onLongPress: (channel) => _toggleFavoriteChannel(channel),
           onReorder: _reorderFavoriteChannels,
           showReorderControls: true,
@@ -862,7 +898,12 @@ class _HomeScreenState extends State<HomeScreen> {
       case ActiveView.continueWatching:
         final progress = WatchProgressStore()
             .getAll()
-            .where((p) => p.fraction > 0 && p.fraction < .95)
+            // ponytail: finished movies drop out, finished series stay for next episode.
+            .where(
+              (p) =>
+                  p.fraction > 0 &&
+                  (p.fraction < .95 || !p.id.startsWith('movie:')),
+            )
             .toList();
         return GridViewContentView<WatchProgress>(
           items: progress,
@@ -893,7 +934,9 @@ class _HomeScreenState extends State<HomeScreen> {
               final series = visibleSeries
                   .where((s) => p.id == 'series:${s.seriesId}')
                   .firstOrNull;
-              if (series != null) _onSeriesTap(series);
+              if (series != null) {
+                _onSeriesTap(series, initialEpisodeId: p.episodeId);
+              }
             }
           },
           onLongPress: _removeContinueWatching,
@@ -959,7 +1002,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
           itemBuilder: (channel) =>
               LiveChannelCard(channel: channel, client: _client),
-          onTap: (channel) => _onChannelTap(channel, ActiveView.live),
+          onTap: (channel) => _onChannelTap(
+            channel,
+            ActiveView.live,
+            zapQueue: liveFiltered,
+          ),
           onLongPress: (channel) => _toggleFavoriteChannel(channel),
           onReorder: isFavSelected ? _reorderFavoriteChannels : null,
           showReorderControls: isFavSelected,

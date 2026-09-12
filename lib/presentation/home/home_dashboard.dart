@@ -1051,7 +1051,9 @@ class _ContinueWatchingCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '${progress.position.inMinutes} min de ${progress.duration.inMinutes} min',
+            progress.fraction >= .95
+                ? 'Completado · ver siguiente'
+                : '${progress.position.inMinutes} min de ${progress.duration.inMinutes} min',
             style: const TextStyle(color: Colors.white70, fontSize: 11),
           ),
           const SizedBox(height: 5),

@@ -63,11 +63,27 @@ class _EpgGuideScreenState extends State<EpgGuideScreen> {
   void _playChannel() {
     final channel = _selectedChannel;
     if (channel == null) return;
+    // ponytail: same zap queue as the channel lists.
+    final queue = widget.channels
+        .map(
+          (c) => PlayerQueueItem(
+            streamUrl: _streamUrl(c),
+            title: c.channelName,
+          ),
+        )
+        .toList();
+    var index = widget.channels.indexWhere(
+      (c) => c.channelId == channel.channelId,
+    );
+    if (index < 0) index = 0;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PlayerScreen(
-          streamUrl: _streamUrl(channel),
-          channelName: channel.channelName,
+          streamUrl: queue[index].streamUrl,
+          channelName: queue[index].title,
+          queue: queue,
+          initialQueueIndex: index,
+          isLive: true,
         ),
       ),
     );

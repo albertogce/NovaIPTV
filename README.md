@@ -41,8 +41,6 @@ El APK resultante se genera en `build/app/outputs/flutter-apk/app-release.apk`.
 
 - No hay credenciales, servidores ni listas IPTV preconfigurados en el código.
 - Las credenciales introducidas se guardan localmente en el dispositivo para permitir el inicio de sesión automático; no se envían a ningún servicio distinto del servidor IPTV configurado por el usuario.
-- No subas archivos locales o generados: `.env`, `android/local.properties`, archivos de Flutter/Xcode generados, keystores ni archivos de salida. El archivo `.gitignore` incluye estas exclusiones.
-- No registres URLs de stream: pueden contener el usuario y la contraseña de la cuenta IPTV.
 
 ## Estructura
 
@@ -57,11 +55,12 @@ lib/
 ## Tecnologías
 
 - Flutter y Material
-- Riverpod
-- Dio
-- Shared Preferences
-- video_player
+- Riverpod (estado de autenticación)
+- Dio (cliente HTTP Xtream Codes)
+- Shared Preferences (credenciales, favoritos, historial, ajustes)
+- video_player (reproducción)
+- wakelock_plus (pantalla encendida durante la reproducción)
 
 ## Licencia
 
-Añade aquí la licencia que quieras aplicar antes de distribuir el proyecto públicamente.
+Apache License 2.0 — ver el archivo `LICENSE`.

@@ -8,11 +8,13 @@ import 'package:iptv_flutter/presentation/player/player_screen.dart';
 class SeriesDetailScreen extends StatefulWidget {
   final Series series;
   final XtreamApiClient client;
+  final String? initialEpisodeId;
 
   const SeriesDetailScreen({
     super.key,
     required this.series,
     required this.client,
+    this.initialEpisodeId,
   });
 
   @override
@@ -31,6 +33,16 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
   final FocusNode _seasonListFocusNode = FocusNode();
   // Key to track first episode item focus
   final FocusNode _firstEpisodeFocusNode = FocusNode();
+  // ponytail: single node for the episode coming from Seguir viendo.
+  final FocusNode _targetEpisodeFocusNode = FocusNode();
+
+  // ponytail: entry value wins at open; later plays override it.
+  String? _sessionEpisodeId;
+
+  String? get _targetEpisodeId =>
+      _sessionEpisodeId ??
+      widget.initialEpisodeId ??
+      _lastEpisodeId?.toString();
 
   @override
   void initState() {
@@ -43,6 +55,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
   void dispose() {
     _seasonListFocusNode.dispose();
     _firstEpisodeFocusNode.dispose();
+    _targetEpisodeFocusNode.dispose();
     super.dispose();
   }
 
@@ -66,6 +79,38 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
     setState(() {
       _lastEpisodeId = epId;
       _lastEpisodeTitle = title;
+      _sessionEpisodeId = epId.toString();
+    });
+  }
+
+  String? _seasonForEpisode(
+    Map<String, dynamic> episodesMap,
+    String episodeId,
+  ) {
+    for (final entry in episodesMap.entries) {
+      final raw = entry.value;
+      if (raw is! List) continue;
+      for (final item in raw.whereType<Map>()) {
+        final id = (item['id'] ?? item['stream_id'])?.toString();
+        if (id == episodeId) return entry.key;
+      }
+    }
+    return null;
+  }
+
+  void _focusTargetEpisode() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _targetEpisodeFocusNode.requestFocus();
+      final ctx = _targetEpisodeFocusNode.context;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
@@ -77,14 +122,25 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
       if (mounted) {
         final episodesMap = _episodesMap(data);
         // Auto-select first season
-        final firstSeason = episodesMap.keys.isNotEmpty
-            ? _sortSeasonKeys(episodesMap.keys.toList()).first
-            : null;
+        final sorted = episodesMap.keys.isNotEmpty
+            ? _sortSeasonKeys(episodesMap.keys.toList())
+            : <String>[];
+        var selected = sorted.isNotEmpty ? sorted.first : null;
+        final target = _targetEpisodeId;
+        if (target != null) {
+          selected = _seasonForEpisode(episodesMap, target) ?? selected;
+        }
+        final shouldFocusTarget =
+            widget.initialEpisodeId != null &&
+            target != null &&
+            selected != null &&
+            _seasonForEpisode(episodesMap, target) != null;
         setState(() {
           _seriesData = data;
-          _selectedSeason = firstSeason;
+          _selectedSeason = selected;
           _isLoading = false;
         });
+        if (shouldFocusTarget) _focusTargetEpisode();
       }
     } catch (_) {
       if (mounted) {
@@ -291,19 +347,19 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                             itemCount: episodes.length,
                             itemBuilder: (context, index) {
                               final ep = episodes[index];
-                              final isLastWatched =
-                                  _lastEpisodeId != null &&
-                                  int.tryParse(
-                                        (ep['id'] ?? ep['stream_id'])
-                                            .toString(),
-                                      ) ==
-                                      _lastEpisodeId;
+                              final epIdStr = (ep['id'] ?? ep['stream_id'])
+                                  .toString();
+                              final target = _targetEpisodeId;
+                              final isTarget =
+                                  target != null && epIdStr == target;
                               return _EpisodeCard(
                                 episode: ep,
-                                isLastWatched: isLastWatched,
-                                focusNode: index == 0
-                                    ? _firstEpisodeFocusNode
-                                    : null,
+                                isLastWatched: isTarget,
+                                focusNode: isTarget
+                                    ? _targetEpisodeFocusNode
+                                    : (index == 0
+                                          ? _firstEpisodeFocusNode
+                                          : null),
                                 onArrowUp: index == 0
                                     ? () => _seasonListFocusNode.requestFocus()
                                     : null,
