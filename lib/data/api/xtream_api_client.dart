@@ -48,6 +48,18 @@ class XtreamApiClient {
          ),
        );
 
+  /// URL de reproducción de un canal en directo (`.ts`).
+  String liveStreamUrl(int channelId) =>
+      '$baseUrl/live/$username/$password/$channelId.ts';
+
+  /// URL de reproducción de una película. [extension] viene de `get_vod_info`.
+  String movieStreamUrl(int movieId, {String extension = 'mp4'}) =>
+      '$baseUrl/movie/$username/$password/$movieId.$extension';
+
+  /// URL de reproducción de un episodio de serie.
+  String episodeStreamUrl(int episodeId, {String extension = 'mp4'}) =>
+      '$baseUrl/series/$username/$password/$episodeId.$extension';
+
   // 1. Autenticación e Información del Servidor
   Future<Map<String, dynamic>> getServerInfo() async {
     final response = await _get(
@@ -236,12 +248,21 @@ class XtreamApiClient {
     if (data is Map) {
       final message = data['message'] ?? data['error'] ?? data['detail'];
       if (message != null && message.toString().trim().isNotEmpty) {
-        return message.toString();
+        return sanitizeStreamUrl(message.toString());
       }
     }
-    if (data is String && data.trim().isNotEmpty) return data.trim();
+    if (data is String && data.trim().isNotEmpty) {
+      final text = data.trim();
+      // Algunos servidores devuelven páginas HTML (p. ej. nginx ante un
+      // 503): no aportan nada al usuario y ensucian el mensaje.
+      if (text.startsWith('<')) {
+        return 'El servidor devolvió una página de error. '
+            'Inténtalo de nuevo más tarde.';
+      }
+      return sanitizeStreamUrl(text);
+    }
     if (error.message != null && error.message!.trim().isNotEmpty) {
-      return error.message!;
+      return sanitizeStreamUrl(error.message!);
     }
     return 'El servidor no devolvió más información.';
   }

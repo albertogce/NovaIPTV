@@ -67,7 +67,7 @@ class _LiveChannelCardState extends State<LiveChannelCard> {
                       gradient: const LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [Color(0xFF29434A), Color(0xFF17262E)],
+                        colors: [AppColors.cardGradStart, AppColors.cardGradEnd],
                       ),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
@@ -79,16 +79,16 @@ class _LiveChannelCardState extends State<LiveChannelCard> {
                         ? Image.network(
                             widget.channel.channelLogo,
                             fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const Icon(
+                            errorBuilder: (_, __, ___) => Icon(
                               Icons.live_tv_rounded,
                               size: 38,
-                              color: Colors.white70,
+                              color: AppColors.bodyText,
                             ),
                           )
-                        : const Icon(
+                        : Icon(
                             Icons.live_tv_rounded,
                             size: 38,
-                            color: Colors.white70,
+                            color: AppColors.bodyText,
                           ),
                   ),
                 ],
@@ -127,7 +127,7 @@ class _LiveChannelCardState extends State<LiveChannelCard> {
                           : 'Sin guía EPG',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        color: Color(0xFF5DE0C2),
+                        color: AppColors.mint,
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
                       ),
@@ -141,7 +141,7 @@ class _LiveChannelCardState extends State<LiveChannelCard> {
           const Positioned(
             top: 12,
             right: 12,
-            child: Icon(Icons.star, color: Color(0xFFFFC857), size: 18),
+            child: Icon(Icons.star, color: AppColors.amber, size: 18),
           ),
       ],
     );
@@ -408,7 +408,7 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF0B1117), Color(0xFF10232B)],
+          colors: [AppColors.ink, AppColors.contentGradEnd],
         ),
       ),
       child: Column(
@@ -462,17 +462,17 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
                       style: const TextStyle(color: Colors.white, fontSize: 14),
                       decoration: InputDecoration(
                         hintText: 'Buscar...',
-                        hintStyle: const TextStyle(color: Colors.white38),
+                        hintStyle: TextStyle(color: AppColors.faintText),
                         prefixIcon: const Icon(
                           Icons.search,
-                          color: Color(0xFF5DE0C2),
+                          color: AppColors.mint,
                           size: 20,
                         ),
                         suffixIcon: widget.searchQuery.isNotEmpty
                             ? IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.clear,
-                                  color: Colors.white54,
+                                  color: AppColors.subtleText,
                                   size: 18,
                                 ),
                                 onPressed: () {
@@ -483,7 +483,7 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
                             : null,
                         isDense: true,
                         filled: true,
-                        fillColor: const Color(0xFF15212A),
+                        fillColor: AppColors.panel,
                         contentPadding: const EdgeInsets.symmetric(
                           vertical: 6,
                           horizontal: 12,
@@ -499,7 +499,7 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: const BorderSide(
-                            color: Color(0xFFFF6B4A),
+                            color: AppColors.accent,
                             width: 2,
                           ),
                         ),
@@ -517,10 +517,10 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
               height: 54,
               margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF15212A).withValues(alpha: 0.9),
+                color: AppColors.panel.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: const Color(0xFF5DE0C2).withValues(alpha: 0.18),
+                  color: AppColors.mint.withValues(alpha: 0.18),
                 ),
               ),
               child: ListView.builder(
@@ -579,7 +579,7 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
                               size: 16,
                               color: isSelected || hasFocus
                                   ? Colors.white
-                                  : const Color(0xFF5DE0C2),
+                                  : AppColors.mint,
                             ),
                             label: Text(
                               title,
@@ -593,10 +593,10 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
                               ),
                             ),
                             selected: isSelected,
-                            selectedColor: const Color(0xFFFF6B4A),
+                            selectedColor: AppColors.accent,
                             backgroundColor: hasFocus
-                                ? const Color(0xFFB94732)
-                                : const Color(0xFF1D3039),
+                                ? AppColors.chipFocus
+                                : AppColors.focusFill,
                             onSelected: (_) => widget.onSelectCategory(catId),
                           );
                         },
@@ -610,7 +610,7 @@ class _CategoryContentViewState<C, T> extends State<CategoryContentView<C, T>> {
             Container(
               height: 1,
               margin: const EdgeInsets.symmetric(horizontal: 16),
-              color: const Color(0xFF5DE0C2).withValues(alpha: 0.12),
+              color: AppColors.mint.withValues(alpha: 0.12),
             ),
           // Grid content view with 7 columns
           if (widget.categoriesOnSide)
@@ -696,7 +696,7 @@ class _CategorySidebar<C> extends StatelessWidget {
       width: MediaQuery.sizeOf(context).width < 700 ? 148 : 210,
       margin: const EdgeInsets.fromLTRB(16, 6, 4, 20),
       decoration: BoxDecoration(
-        color: const Color(0xFF15212A).withValues(alpha: 0.92),
+        color: AppColors.panel.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
@@ -751,25 +751,19 @@ class _CategorySidebar<C> extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color: hasFocus
-                                ? const Color(
-                                    0xFF5DE0C2,
-                                  ).withValues(alpha: 0.16)
+                                ? AppColors.mint.withValues(alpha: 0.16)
                                 : selected
-                                ? const Color(
-                                    0xFFFF6B4A,
-                                  ).withValues(alpha: 0.18)
+                                ? AppColors.accent.withValues(alpha: 0.18)
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: hasFocus
-                                  ? const Color(0xFF5DE0C2)
-                                  : selected
-                                  ? const Color(
-                                      0xFFFF6B4A,
-                                    ).withValues(alpha: 0.5)
-                                  : Colors.transparent,
-                              width: hasFocus ? 2 : 1,
-                            ),
+                              border: Border.all(
+                                color: hasFocus
+                                    ? AppColors.mint
+                                    : selected
+                                    ? AppColors.accent.withValues(alpha: 0.5)
+                                    : Colors.transparent,
+                                width: hasFocus ? 2 : 1,
+                              ),
                           ),
                           child: Row(
                             children: [
@@ -777,10 +771,10 @@ class _CategorySidebar<C> extends StatelessWidget {
                                 Icons.label_outline_rounded,
                                 size: 17,
                                 color: hasFocus
-                                    ? const Color(0xFF5DE0C2)
+                                    ? AppColors.mint
                                     : selected
-                                    ? const Color(0xFFFF8B70)
-                                    : const Color(0xFF8CAAA9),
+                                    ? AppColors.salmon
+                                    : AppColors.mutedLabel,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -791,7 +785,7 @@ class _CategorySidebar<C> extends StatelessWidget {
                                   style: TextStyle(
                                     color: hasFocus || selected
                                         ? Colors.white
-                                        : Colors.white70,
+                                        : AppColors.bodyText,
                                     fontSize: 12,
                                     fontWeight: selected
                                         ? FontWeight.w700
@@ -856,24 +850,42 @@ class GridViewContentView<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final crossAxisCount = width >= 1200
+    final baseCount = width >= 1200
         ? 6
         : width >= 800
         ? 5
         : width >= 600
         ? 4
         : 2;
+    // Ajuste "Densidad de cuadrícula": 0 automática, 1 cómoda, 2 densa.
+    final density =
+        int.tryParse(
+          SharedPrefsStorage().getString('settings_grid_density') ?? '',
+        ) ??
+        0;
+    final crossAxisCount = switch (density) {
+      1 => baseCount > 2 ? baseCount - 1 : 2,
+      2 => baseCount + 1,
+      _ => baseCount,
+    };
 
+    // Ajuste "Tamaño de tarjetas": escala solo el texto de las tarjetas.
+    final scale =
+        double.tryParse(
+          SharedPrefsStorage().getString('settings_card_scale') ?? '',
+        ) ??
+        1.0;
+
+    Widget content;
     if (items.isEmpty) {
-      return const Center(
+      content = Center(
         child: Text(
           'No hay contenido disponible',
-          style: TextStyle(color: Colors.white70),
+          style: TextStyle(color: AppColors.bodyText),
         ),
       );
-    }
-
-    return GridView.builder(
+    } else {
+      content = GridView.builder(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
@@ -914,6 +926,14 @@ class GridViewContentView<T> extends StatelessWidget {
           itemIndex: index,
         );
       },
+      );
+    }
+
+    return MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: TextScaler.linear(scale)),
+      child: content,
     );
   }
 }
@@ -1102,11 +1122,11 @@ class _GridItemState<T> extends State<_GridItem<T>> {
             onLongPress: _handleGestureLongPress,
             child: Card(
               color: hasFocus
-                  ? const Color(0xFFFF6B4A)
-                  : const Color(0xFF15212A),
+                  ? AppColors.accent
+                  : AppColors.panel,
               margin: const EdgeInsets.all(2),
               elevation: hasFocus ? 8 : 2,
-              shadowColor: const Color(0xFFFF6B4A).withValues(alpha: 0.25),
+              shadowColor: AppColors.accent.withValues(alpha: 0.25),
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -1121,12 +1141,12 @@ class _GridItemState<T> extends State<_GridItem<T>> {
                 children: [
                   widget.itemBuilder(widget.item),
                   if (widget.showReorderControls)
-                    const Positioned(
+                    Positioned(
                       top: 4,
                       left: 4,
                       child: Icon(
                         Icons.swap_vert,
-                        color: Colors.white70,
+                        color: AppColors.bodyText,
                         size: 18,
                       ),
                     ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:iptv_flutter/core/theme/app_theme.dart';
 import 'package:iptv_flutter/data/models/live_channel.dart';
 import 'package:iptv_flutter/data/models/vod_movie.dart';
 import 'package:iptv_flutter/data/models/series.dart';
@@ -134,9 +135,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen>
   Widget build(BuildContext context) {
     final isEmpty = _tabs.isEmpty;
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1117),
+      backgroundColor: AppColors.ink,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0B1117),
+        backgroundColor: AppColors.ink,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -150,7 +151,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen>
             ),
             Text(
               '"${widget.query}"',
-              style: const TextStyle(color: Color(0xFF5DE0C2), fontSize: 13),
+              style: TextStyle(color: AppColors.mint, fontSize: 13),
             ),
           ],
         ),
@@ -160,15 +161,15 @@ class _SearchResultsScreenState extends State<SearchResultsScreen>
         ),
       ),
       body: isEmpty
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.search_off, color: Colors.white38, size: 64),
+                  Icon(Icons.search_off, color: AppColors.faintText, size: 64),
                   SizedBox(height: 16),
                   Text(
                     'No se encontraron resultados',
-                    style: TextStyle(color: Colors.white54),
+                    style: TextStyle(color: AppColors.subtleText),
                   ),
                 ],
               ),
@@ -179,7 +180,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen>
                   width: 180,
                   margin: const EdgeInsets.fromLTRB(16, 8, 4, 16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF15212A),
+                    color: AppColors.panel,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Colors.white12),
                   ),
@@ -190,17 +191,17 @@ class _SearchResultsScreenState extends State<SearchResultsScreen>
                     minExtendedWidth: 180,
                     labelType: NavigationRailLabelType.none,
                     selectedIconTheme: const IconThemeData(
-                      color: Color(0xFFFF6B4A),
+                      color: AppColors.accent,
                     ),
                     selectedLabelTextStyle: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
                     ),
-                    unselectedIconTheme: const IconThemeData(
-                      color: Color(0xFF8CAAA9),
+                    unselectedIconTheme: IconThemeData(
+                      color: AppColors.mutedLabel,
                     ),
-                    unselectedLabelTextStyle: const TextStyle(
-                      color: Colors.white70,
+                    unselectedLabelTextStyle: TextStyle(
+                      color: AppColors.bodyText,
                     ),
                     onDestinationSelected: (index) =>
                         _tabController.animateTo(index),
@@ -340,12 +341,12 @@ class _SearchGridCardState extends State<_SearchGridCard> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Card(
-          color: _hasFocus ? const Color(0xFFFF6B4A) : const Color(0xFF15212A),
+          color: _hasFocus ? AppColors.accent : AppColors.panel,
           margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
             side: BorderSide(
-              color: _hasFocus ? const Color(0xFFFFC857) : Colors.white12,
+              color: _hasFocus ? AppColors.amber : Colors.white12,
               width: _hasFocus ? 2 : 1,
             ),
           ),

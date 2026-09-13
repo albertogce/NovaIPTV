@@ -4,12 +4,13 @@ Cliente IPTV en Flutter orientado a Android TV y Google TV. Permite conectar una
 
 ## Funcionalidades
 
-- Inicio de sesión con servidor, usuario y contraseña introducidos por cada usuario.
+- Inicio de sesión validado contra la API, con servidor, usuario y contraseña introducidos por cada usuario.
 - Catálogo de canales en directo, películas y series.
 - Categorías laterales y navegación optimizada para D-pad.
 - Búsqueda global y resultados organizados por tipo de contenido.
 - EPG breve en tarjetas de canales cuando el servidor lo proporciona.
 - Favoritos de canales, historial y ordenación de favoritos.
+- Aviso de caducidad de la suscripción en la pantalla principal.
 - Reproducción de streams mediante `video_player`.
 - Ajustes para credenciales, actualización automática y visibilidad/orden de categorías.
 
@@ -40,7 +41,8 @@ El APK resultante se genera en `build/app/outputs/flutter-apk/app-release.apk`.
 ## Privacidad y seguridad
 
 - No hay credenciales, servidores ni listas IPTV preconfigurados en el código.
-- Las credenciales introducidas se guardan localmente en el dispositivo para permitir el inicio de sesión automático; no se envían a ningún servicio distinto del servidor IPTV configurado por el usuario.
+- Las credenciales introducidas se guardan en el almacén seguro del sistema operativo para permitir el inicio de sesión automático; no se envían a ningún servicio distinto del servidor IPTV configurado por el usuario.
+- Las credenciales heredadas guardadas anteriormente en texto claro se migran al almacén seguro y se eliminan de las preferencias.
 
 ## Estructura
 
@@ -48,7 +50,6 @@ El APK resultante se genera en `build/app/outputs/flutter-apk/app-release.apk`.
 lib/
   core/          Tema, almacenamiento, utilidades y reproducción
   data/          Cliente Xtream Codes y modelos de datos
-  domain/        Entidades e interfaces de repositorio
   presentation/  Pantallas de acceso, inicio, ajustes y reproductor
 ```
 
@@ -57,7 +58,9 @@ lib/
 - Flutter y Material
 - Riverpod (estado de autenticación)
 - Dio (cliente HTTP Xtream Codes)
-- Shared Preferences (credenciales, favoritos, historial, ajustes)
+- flutter_secure_storage (credenciales)
+- Shared Preferences (favoritos, historial, ajustes)
+- path_provider (caché persistente del catálogo)
 - video_player (reproducción)
 - wakelock_plus (pantalla encendida durante la reproducción)
 

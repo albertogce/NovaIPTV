@@ -7,3 +7,20 @@ String normalizeUrl(String url) {
   normalized = normalized.replaceAll(RegExp(r'/+$'), '');
   return normalized;
 }
+
+/// Oculta usuario y contraseña en URLs Xtream directas
+/// (`/live/user/pass/id.ts`) y en parámetros `username`/`password`, antes de
+/// mostrar texto o registrarlo.
+String sanitizeStreamUrl(String text) {
+  final withoutQueryCredentials = text.replaceAllMapped(
+    RegExp(
+      "([?&](?:username|password)=)[^&\\s'\"]+",
+      caseSensitive: false,
+    ),
+    (match) => '${match.group(1)}***',
+  );
+  return withoutQueryCredentials.replaceAllMapped(
+    RegExp("((?:live|movie|series|timeshift)/)[^/]+/[^/]+(/[^'\"\\s]*)"),
+    (match) => '${match.group(1)}***/***${match.group(2)}',
+  );
+}

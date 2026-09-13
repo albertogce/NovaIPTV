@@ -10,13 +10,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:iptv_flutter/main.dart';
+import 'package:iptv_flutter/data/models/iptv_user_info.dart';
 
 void main() {
   testWidgets('Login screen focus navigation test', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      const ProviderScope(child: IPTVApp(skipLogin: false)),
+      ProviderScope(
+        child: IPTVApp(
+          initialUser: IptvUserInfo(username: '', password: '', server: ''),
+        ),
+      ),
     );
 
     // Verify initial focus on server URL field

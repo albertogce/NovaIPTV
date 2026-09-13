@@ -8,82 +8,45 @@ import 'presentation/home/home_screen.dart';
 import 'data/api/xtream_api_client.dart';
 import 'data/models/iptv_user_info.dart';
 
+import 'core/storage/credential_store.dart';
 import 'core/storage/shared_prefs_storage.dart';
-
-/// Returns true when the user has saved credentials and can go directly home.
-Future<bool> _canSkipLogin() async {
-  final user = IptvUserInfo.fromSharedPrefs();
-  return user.isAuthenticated;
-}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SharedPrefsStorage.init();
+  await CredentialStore.init();
 
-  // Determine the initial route before the app renders.
-  final skipLogin = await _canSkipLogin();
-
-  runApp(ProviderScope(child: IPTVApp(skipLogin: skipLogin)));
+  final user = IptvUserInfo.current();
+  runApp(ProviderScope(child: IPTVApp(initialUser: user)));
 }
 
 class IPTVApp extends StatelessWidget {
-  final bool skipLogin;
+  final IptvUserInfo initialUser;
 
-  const IPTVApp({super.key, required this.skipLogin});
+  const IPTVApp({super.key, required this.initialUser});
+
+  XtreamApiClient _clientFor(IptvUserInfo? user) => XtreamApiClient(
+    baseUrl: user?.server ?? '',
+    username: user?.username ?? '',
+    password: user?.password ?? '',
+  );
 
   @override
   Widget build(BuildContext context) {
-    // If we have saved credentials and cached data, build HomeScreen directly
-    // so the user never sees the login screen.
-    if (skipLogin) {
-      final user = IptvUserInfo.fromSharedPrefs();
-      return MaterialApp(
-        title: 'Nova IPTV',
-        theme: appTheme,
-        darkTheme: appTheme,
-        themeMode: ThemeMode.dark,
-        home: HomeScreen(
-          client: XtreamApiClient(
-            baseUrl: user.server,
-            username: user.username,
-            password: user.password,
-          ),
-        ),
-        routes: {
-          '/login': (context) => const LoginScreen(),
-          '/home': (context) {
-            final u =
-                ModalRoute.of(context)?.settings.arguments as IptvUserInfo?;
-            return HomeScreen(
-              client: XtreamApiClient(
-                baseUrl: u?.server ?? '',
-                username: u?.username ?? '',
-                password: u?.password ?? '',
-              ),
-            );
-          },
-        },
-      );
-    }
-
+    final skipLogin = initialUser.isAuthenticated;
     return MaterialApp(
       title: 'Nova IPTV',
       theme: appTheme,
       darkTheme: appTheme,
       themeMode: ThemeMode.dark,
-      initialRoute: '/login',
+      home: skipLogin ? HomeScreen(client: _clientFor(initialUser)) : null,
+      initialRoute: skipLogin ? null : '/login',
       routes: {
         '/login': (context) => const LoginScreen(),
         '/home': (context) {
           final user =
               ModalRoute.of(context)?.settings.arguments as IptvUserInfo?;
-          return HomeScreen(
-            client: XtreamApiClient(
-              baseUrl: user?.server ?? '',
-              username: user?.username ?? '',
-              password: user?.password ?? '',
-            ),
-          );
+          return HomeScreen(client: _clientFor(user ?? initialUser));
         },
       },
     );

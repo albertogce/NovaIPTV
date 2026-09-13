@@ -12,8 +12,18 @@ dependencies:
   flutter_riverpod: ^2.6.1
   dio: ^5.11.1
   shared_preferences: ^2.5.5
+  # Versiones sin el paso de native assets (exige un SDK sin espacios).
+  flutter_secure_storage: ^9.2.4
+  path_provider: 2.1.4
   video_player: ^2.9.2
   wakelock_plus: ^1.4.0
+
+dependency_overrides:
+  # path_provider_* recientes usan FFI/native assets vía objective_c/jni.
+  path_provider_android: 2.2.22
+  path_provider_foundation: 2.4.2
+  # wakelock 1.5.2 (impuesto por win32 5.x) solo compila con iface 1.4.x.
+  wakelock_plus_platform_interface: '>=1.4.0 <1.5.0'
 
 dev_dependencies:
   flutter_test:

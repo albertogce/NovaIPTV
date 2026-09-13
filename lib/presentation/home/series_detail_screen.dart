@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:iptv_flutter/core/storage/shared_prefs_storage.dart';
+import 'package:iptv_flutter/core/theme/app_theme.dart';
 import 'package:iptv_flutter/data/api/xtream_api_client.dart';
 import 'package:iptv_flutter/data/models/series.dart';
 import 'package:iptv_flutter/presentation/player/player_screen.dart';
@@ -295,11 +296,11 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
     final episodeColumns = MediaQuery.sizeOf(context).width >= 900 ? 2 : 1;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1117),
+      backgroundColor: AppColors.ink,
       body: SafeArea(
         child: _isLoading
             ? const Center(
-                child: CircularProgressIndicator(color: Color(0xFFFF6B4A)),
+                child: CircularProgressIndicator(color: AppColors.accent),
               )
             : Column(
                 children: [
@@ -329,10 +330,10 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                   // ── Episodes grid ─────────────────────────────────────────
                   Expanded(
                     child: episodes.isEmpty
-                        ? const Center(
+                        ? Center(
                             child: Text(
                               'No hay episodios disponibles',
-                              style: TextStyle(color: Colors.white54),
+                              style: TextStyle(color: AppColors.subtleText),
                             ),
                           )
                         : GridView.builder(
@@ -396,7 +397,7 @@ class _SeriesHeader extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF1C333B), Color(0xFF15212A)],
+          colors: [AppColors.seriesHeadStart, AppColors.panel],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -420,7 +421,7 @@ class _SeriesHeader extends StatelessWidget {
                         child: const Icon(
                           Icons.tv,
                           size: 48,
-                          color: Color(0xFFFFC857),
+                          color: AppColors.amber,
                         ),
                       ),
                     )
@@ -429,7 +430,7 @@ class _SeriesHeader extends StatelessWidget {
                       child: const Icon(
                         Icons.tv,
                         size: 48,
-                        color: Color(0xFFFFC857),
+                        color: AppColors.amber,
                       ),
                     ),
             ),
@@ -472,15 +473,15 @@ class _SeriesHeader extends StatelessWidget {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF6B4A).withValues(alpha: 0.15),
+                      color: AppColors.accent.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFFF6B4A)),
+                      border: Border.all(color: AppColors.accent),
                     ),
                     child: Row(
                       children: [
                         const Icon(
                           Icons.history,
-                          color: Color(0xFFFF6B4A),
+                          color: AppColors.accent,
                           size: 16,
                         ),
                         const SizedBox(width: 6),
@@ -502,8 +503,8 @@ class _SeriesHeader extends StatelessWidget {
                 ],
                 Text(
                   plot,
-                  style: const TextStyle(
-                    color: Colors.white70,
+                  style: TextStyle(
+                    color: AppColors.bodyText,
                     fontSize: 13,
                     height: 1.4,
                   ),
@@ -538,12 +539,12 @@ class _SeriesMetaChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: const Color(0xFF5DE0C2), size: 14),
+            Icon(icon, color: AppColors.mint, size: 14),
             const SizedBox(width: 5),
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white70,
+              style: TextStyle(
+                color: AppColors.bodyText,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
@@ -576,7 +577,7 @@ class _SeasonSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFF15212A),
+      color: AppColors.panel,
       height: 52,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
@@ -621,10 +622,10 @@ class _SeasonSelector extends StatelessWidget {
                       ),
                     ),
                     selected: isSelected,
-                    selectedColor: const Color(0xFFFF6B4A),
+                    selectedColor: AppColors.accent,
                     backgroundColor: hasFocus
-                        ? const Color(0xFFB94732)
-                        : const Color(0xFF1D3039),
+                        ? AppColors.chipFocus
+                        : AppColors.focusFill,
                     onSelected: (_) => onSeasonSelected(season),
                   );
                 },
@@ -728,18 +729,18 @@ class _EpisodeCardState extends State<_EpisodeCard> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             color: _hasFocus
-                ? const Color(0xFF3B211C)
-                : const Color(0xFF15212A),
+                ? AppColors.episodeFocus
+                : AppColors.panel,
             border: Border.all(
               color: _hasFocus
-                  ? const Color(0xFFFF6B4A)
+                  ? AppColors.accent
                   : (widget.isLastWatched ? Colors.amber : Colors.white12),
               width: _hasFocus || widget.isLastWatched ? 2 : 1,
             ),
             boxShadow: _hasFocus
                 ? [
                     BoxShadow(
-                      color: const Color(0xFFFF6B4A).withValues(alpha: 0.35),
+                      color: AppColors.accent.withValues(alpha: 0.35),
                       blurRadius: 12,
                     ),
                   ]
@@ -807,8 +808,8 @@ class _EpisodeCardState extends State<_EpisodeCard> {
                         const SizedBox(height: 4),
                         Text(
                           plot,
-                          style: const TextStyle(
-                            color: Colors.white54,
+                          style: TextStyle(
+                            color: AppColors.subtleText,
                             fontSize: 10,
                             height: 1.3,
                           ),
@@ -836,7 +837,7 @@ class _EpisodeCardState extends State<_EpisodeCard> {
                 padding: const EdgeInsets.only(right: 8),
                 child: Icon(
                   Icons.play_circle_outline,
-                  color: _hasFocus ? const Color(0xFFFF6B4A) : Colors.white24,
+                  color: _hasFocus ? AppColors.accent : Colors.white24,
                   size: 24,
                 ),
               ),
@@ -849,7 +850,7 @@ class _EpisodeCardState extends State<_EpisodeCard> {
 
   Widget _placeholderThumbnail(String epNum) {
     return Container(
-      color: const Color(0xFF2C2C2C),
+      color: AppColors.thumbPlaceholder,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -857,7 +858,7 @@ class _EpisodeCardState extends State<_EpisodeCard> {
           if (epNum.isNotEmpty)
             Text(
               'Ep. $epNum',
-              style: const TextStyle(color: Colors.white38, fontSize: 10),
+              style: TextStyle(color: AppColors.faintText, fontSize: 10),
             ),
         ],
       ),

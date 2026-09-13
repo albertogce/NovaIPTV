@@ -1,9 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- flutter_secure_storage no admite restauración automática de sus claves. -->
     <application
         android:label="Nova IPTV"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/tv_banner"
+        android:allowBackup="false"
         android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"

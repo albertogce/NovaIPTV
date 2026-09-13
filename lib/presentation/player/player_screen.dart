@@ -7,8 +7,9 @@ import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/playback/watch_progress_store.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/utils/url_normalizer.dart';
 
-const _accent = Color(0xFFFF6B4A);
 const _seekStep = Duration(seconds: 10);
 const _seekStepLarge = Duration(seconds: 30);
 const _seekStepBar = Duration(seconds: 60);
@@ -626,15 +627,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 if (_isInitialized) _buildVideo(),
                 if (_isBuffering || !_isInitialized && !_hasError)
                   const Center(
-                    child: CircularProgressIndicator(color: _accent),
+                    child: CircularProgressIndicator(color: AppColors.accent),
                   ),
                 if (!_isInitialized && !_hasError)
-                  const Center(
+                  Center(
                     child: Padding(
                       padding: EdgeInsets.only(top: 88),
                       child: Text(
                         'Conectando...',
-                        style: TextStyle(color: Colors.white70, fontSize: 18),
+                        style: TextStyle(color: AppColors.bodyText, fontSize: 18),
                       ),
                     ),
                   ),
@@ -741,14 +742,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   padding: const EdgeInsets.only(right: 12),
                   child: Text(
                     '${_queueIndex + 1} / ${widget.queue.length}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 16),
+                    style: TextStyle(color: AppColors.bodyText, fontSize: 16),
                   ),
                 ),
               if (_treatAsLive)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _accent,
+                    color: AppColors.accent,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: const Text(
@@ -840,9 +841,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 onPressed: _restart,
               ),
               const Spacer(),
-              const Text(
+              Text(
                 'OK play/pausa  ·  barra ← → 1 min  ·  ↑↓ volumen  ·  Atrás oculta',
-                style: TextStyle(color: Colors.white54, fontSize: 13),
+                style: TextStyle(color: AppColors.subtleText, fontSize: 13),
               ),
             ],
           ),
@@ -910,20 +911,20 @@ class _TvIconButtonState extends State<_TvIconButton> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: primary
-                  ? (_focused ? _accent : Colors.white)
+                  ? (_focused ? AppColors.accent : Colors.white)
                   : _focused
-                  ? _accent.withValues(alpha: 0.22)
+                  ? AppColors.accent.withValues(alpha: 0.22)
                   : Colors.white.withValues(alpha: 0.1),
               border: Border.all(
                 color: _focused
-                    ? (primary ? Colors.white : _accent)
+                    ? (primary ? Colors.white : AppColors.accent)
                     : Colors.white.withValues(alpha: 0.18),
                 width: _focused ? 3 : 1,
               ),
               boxShadow: [
                 if (primary)
                   BoxShadow(
-                    color: (_focused ? _accent : Colors.black).withValues(
+                    color: (_focused ? AppColors.accent : Colors.black).withValues(
                       alpha: 0.45,
                     ),
                     blurRadius: _focused ? 28 : 16,
@@ -931,7 +932,7 @@ class _TvIconButtonState extends State<_TvIconButton> {
                   ),
                 if (_focused && !primary)
                   BoxShadow(
-                    color: _accent.withValues(alpha: 0.35),
+                    color: AppColors.accent.withValues(alpha: 0.35),
                     blurRadius: 18,
                   ),
               ],
@@ -941,9 +942,9 @@ class _TvIconButtonState extends State<_TvIconButton> {
                 widget.icon,
                 size: widget.size,
                 color: !enabled
-                    ? Colors.white38
+                    ? AppColors.faintText
                     : primary
-                    ? (_focused ? Colors.white : const Color(0xFF121212))
+                    ? (_focused ? Colors.white : AppColors.playerInk)
                     : Colors.white,
               ),
             ),
@@ -997,11 +998,11 @@ class _TvChipButtonState extends State<_TvChipButton> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: _focused
-                ? _accent.withValues(alpha: 0.28)
+                ? AppColors.accent.withValues(alpha: 0.28)
                 : Colors.white.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: _focused ? _accent : Colors.white24,
+              color: _focused ? AppColors.accent : Colors.white24,
               width: _focused ? 2 : 1,
             ),
           ),
@@ -1083,7 +1084,7 @@ class _TvSeekBarState extends State<_TvSeekBar> {
             child: Text(
               widget.positionLabel,
               style: TextStyle(
-                color: _focused ? Colors.white : Colors.white70,
+                color: _focused ? Colors.white : AppColors.bodyText,
                 fontSize: 14,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
@@ -1109,7 +1110,7 @@ class _TvSeekBarState extends State<_TvSeekBar> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(99),
                       border: Border.all(
-                        color: _focused ? _accent : Colors.transparent,
+                        color: _focused ? AppColors.accent : Colors.transparent,
                         width: 2,
                       ),
                     ),
@@ -1120,7 +1121,7 @@ class _TvSeekBarState extends State<_TvSeekBar> {
                         value: widget.enabled ? widget.progress : 1,
                         minHeight: _focused ? 10 : 6,
                         backgroundColor: Colors.white24,
-                        color: widget.enabled ? _accent : Colors.redAccent,
+                        color: widget.enabled ? AppColors.accent : Colors.redAccent,
                       ),
                     ),
                   ),
@@ -1133,8 +1134,8 @@ class _TvSeekBarState extends State<_TvSeekBar> {
             child: Text(
               widget.durationLabel,
               textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: Colors.white70,
+              style: TextStyle(
+                color: AppColors.bodyText,
                 fontSize: 14,
                 fontFeatures: [FontFeature.tabularFigures()],
               ),
@@ -1217,13 +1218,13 @@ class _ErrorView extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white54, fontSize: 14),
+              style: TextStyle(color: AppColors.subtleText, fontSize: 14),
             ),
             const SizedBox(height: 16),
             Text(
-              url,
+              sanitizeStreamUrl(url),
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white38, fontSize: 12),
+              style: TextStyle(color: AppColors.faintText, fontSize: 12),
             ),
             const SizedBox(height: 28),
             Row(
@@ -1252,7 +1253,7 @@ class _ErrorView extends StatelessWidget {
 // ponytail: decoder failures (HEVC/MKV on cheap boxes) get an actionable
 // message instead of the raw ExoPlayer dump.
 String _friendlyPlaybackError(Object e) {
-  final s = e.toString();
+  final s = sanitizeStreamUrl(e.toString());
   if (s.contains('MediaCodecVideoRenderer') ||
       s.contains('MediaCodecAudioRenderer') ||
       s.contains('MediaCodecRenderer')) {

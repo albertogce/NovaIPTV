@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:iptv_flutter/core/storage/credential_store.dart';
 import 'package:iptv_flutter/core/storage/shared_prefs_storage.dart';
+import 'package:iptv_flutter/core/theme/app_theme.dart';
 import 'package:iptv_flutter/data/models/live_category.dart';
 import 'package:iptv_flutter/data/models/vod_category.dart';
 import 'package:iptv_flutter/data/models/series_category.dart';
@@ -89,16 +91,19 @@ class _SettingsScreenState extends State<SettingsScreen>
     _tabController = TabController(length: 3, vsync: this);
 
     _urlController = TextEditingController(
-      text:
-          storage.getString('server') ??
-          storage.getString('server_url') ??
-          widget.client.baseUrl,
+      text: CredentialStore.server.isEmpty
+          ? widget.client.baseUrl
+          : CredentialStore.server,
     );
     _userController = TextEditingController(
-      text: storage.getString('username') ?? widget.client.username,
+      text: CredentialStore.username.isEmpty
+          ? widget.client.username
+          : CredentialStore.username,
     );
     _passController = TextEditingController(
-      text: storage.getString('password') ?? widget.client.password,
+      text: CredentialStore.password.isEmpty
+          ? widget.client.password
+          : CredentialStore.password,
     );
 
     _urlController.addListener(_autoSaveCredentials);
@@ -183,11 +188,11 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   void _autoSaveCredentials() async {
-    final newUrl = _urlController.text.trim();
-    await storage.setString('server', newUrl);
-    await storage.setString('server_url', newUrl);
-    await storage.setString('username', _userController.text.trim());
-    await storage.setString('password', _passController.text.trim());
+    await CredentialStore.save(
+      username: _userController.text.trim(),
+      password: _passController.text.trim(),
+      server: _urlController.text.trim(),
+    );
   }
 
   void _notifySettingsSaved() {
@@ -309,7 +314,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         _notifySettingsSaved();
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFF0B1117),
+        backgroundColor: AppColors.ink,
         body: FocusTraversalGroup(
           policy: ReadingOrderTraversalPolicy(),
           child: SingleChildScrollView(
@@ -331,10 +336,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                       autofocus: true,
                       textInputAction: TextInputAction.next,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'URL Servidor',
-                        labelStyle: TextStyle(color: Colors.white70),
-                        prefixIcon: Icon(Icons.link, color: Color(0xFF5DE0C2)),
+                        labelStyle: TextStyle(color: AppColors.bodyText),
+                        prefixIcon: Icon(Icons.link, color: AppColors.mint),
                         border: OutlineInputBorder(),
                       ),
                       onFieldSubmitted: (_) => _userFocusNode.requestFocus(),
@@ -352,12 +357,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                       focusNode: _userFocusNode,
                       textInputAction: TextInputAction.next,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Usuario',
-                        labelStyle: TextStyle(color: Colors.white70),
+                        labelStyle: TextStyle(color: AppColors.bodyText),
                         prefixIcon: Icon(
                           Icons.person,
-                          color: Color(0xFF5DE0C2),
+                          color: AppColors.mint,
                         ),
                         border: OutlineInputBorder(),
                       ),
@@ -377,10 +382,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                       textInputAction: TextInputAction.next,
                       obscureText: true,
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Contraseña',
-                        labelStyle: TextStyle(color: Colors.white70),
-                        prefixIcon: Icon(Icons.lock, color: Color(0xFF5DE0C2)),
+                        labelStyle: TextStyle(color: AppColors.bodyText),
+                        prefixIcon: Icon(Icons.lock, color: AppColors.mint),
                         border: OutlineInputBorder(),
                       ),
                       onFieldSubmitted: (_) => _sliderFocusNode.requestFocus(),
@@ -427,11 +432,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                           ),
                           decoration: BoxDecoration(
                             color: hasFocus
-                                ? const Color(0xFF1D3039)
+                                ? AppColors.focusFill
                                 : Colors.transparent,
                             border: Border.all(
                               color: hasFocus
-                                  ? const Color(0xFF5DE0C2)
+                                  ? AppColors.mint
                                   : Colors.white24,
                               width: hasFocus ? 2 : 1,
                             ),
@@ -442,7 +447,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             min: .8,
                             max: 1.3,
                             divisions: 5,
-                            activeColor: const Color(0xFF5DE0C2),
+                            activeColor: AppColors.mint,
                             onChanged: (value) {
                               setState(() => _scale = value);
                               storage.setString(
@@ -474,11 +479,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           decoration: BoxDecoration(
                             color: hasFocus
-                                ? const Color(0xFF1D3039)
+                                ? AppColors.focusFill
                                 : Colors.transparent,
                             border: Border.all(
                               color: hasFocus
-                                  ? const Color(0xFF5DE0C2)
+                                  ? AppColors.mint
                                   : Colors.white24,
                               width: hasFocus ? 2 : 1,
                             ),
@@ -488,7 +493,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             value: _density,
                             isExpanded: true,
                             underline: const SizedBox(),
-                            dropdownColor: const Color(0xFF15212A),
+                            dropdownColor: AppColors.panel,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -522,7 +527,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       style: TextStyle(color: Colors.white),
                     ),
                     value: _contrast,
-                    activeThumbColor: const Color(0xFF5DE0C2),
+                    activeThumbColor: AppColors.mint,
                     onChanged: (value) {
                       setState(() => _contrast = value);
                       storage.setBool('settings_high_contrast', value);
@@ -563,7 +568,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     style: TextStyle(color: Colors.white60),
                   ),
                   value: _storeVisibleOnly,
-                  activeThumbColor: const Color(0xFF5DE0C2),
+                  activeThumbColor: AppColors.mint,
                   onChanged: (value) async {
                     setState(() => _storeVisibleOnly = value);
                     await storage.setBool('settings_store_visible_only', value);
@@ -575,7 +580,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const SizedBox(height: 12),
                 Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF15212A),
+                    color: AppColors.panel,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: Colors.white.withValues(alpha: 0.08),
@@ -585,8 +590,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                     children: [
                       TabBar(
                         controller: _tabController,
-                        indicatorColor: const Color(0xFF5DE0C2),
-                        labelColor: const Color(0xFF5DE0C2),
+                        indicatorColor: AppColors.mint,
+                        labelColor: AppColors.mint,
                         unselectedLabelColor: Colors.white60,
                         tabs: const [
                           Tab(text: 'En Vivo'),
@@ -645,10 +650,10 @@ class _SettingsScreenState extends State<SettingsScreen>
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           decoration: BoxDecoration(
-            color: hasFocus ? const Color(0xFF1D3039) : Colors.transparent,
+            color: hasFocus ? AppColors.focusFill : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: hasFocus ? const Color(0xFF5DE0C2) : Colors.transparent,
+              color: hasFocus ? AppColors.mint : Colors.transparent,
               width: 2,
             ),
           ),
@@ -667,7 +672,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
               DropdownButton<String>(
                 value: _colors[key],
-                dropdownColor: const Color(0xFF15212A),
+                dropdownColor: AppColors.panel,
                 underline: const SizedBox(),
                 style: const TextStyle(color: Colors.white, fontSize: 16),
                 items: _actions.entries
@@ -717,7 +722,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF15212A),
+        color: AppColors.panel,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
@@ -760,10 +765,10 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Widget _buildLiveCategoryTab() {
     if (_liveCats.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No hay categorías',
-          style: TextStyle(color: Colors.white54),
+          style: TextStyle(color: AppColors.subtleText),
         ),
       );
     }
@@ -820,10 +825,10 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Widget _buildVodCategoryTab() {
     if (_vodCats.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No hay categorías',
-          style: TextStyle(color: Colors.white54),
+          style: TextStyle(color: AppColors.subtleText),
         ),
       );
     }
@@ -880,10 +885,10 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Widget _buildSeriesCategoryTab() {
     if (_seriesCats.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No hay categorías',
-          style: TextStyle(color: Colors.white54),
+          style: TextStyle(color: AppColors.subtleText),
         ),
       );
     }
@@ -981,11 +986,11 @@ class _FocusableDropdownState extends State<_FocusableDropdown> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: _hasFocus ? const Color(0xFF1D3039) : const Color(0xFF15212A),
+          color: _hasFocus ? AppColors.focusFill : AppColors.panel,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: _hasFocus
-                ? const Color(0xFF5DE0C2)
+                ? AppColors.mint
                 : Colors.white.withValues(alpha: 0.08),
             width: 2,
           ),
@@ -999,7 +1004,7 @@ class _FocusableDropdownState extends State<_FocusableDropdown> {
             ),
             DropdownButton<int>(
               value: widget.value,
-              dropdownColor: const Color(0xFF15212A),
+              dropdownColor: AppColors.panel,
               underline: const SizedBox(),
               style: const TextStyle(color: Colors.white, fontSize: 16),
               items: const [
@@ -1063,10 +1068,10 @@ class _FocusableActionButtonState extends State<_FocusableActionButton> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: _hasFocus ? const Color(0xFF5DE0C2) : Colors.white24,
+            color: _hasFocus ? AppColors.mint : Colors.white24,
             width: _hasFocus ? 2 : 1,
           ),
-          color: _hasFocus ? const Color(0xFF1D3039) : Colors.transparent,
+          color: _hasFocus ? AppColors.focusFill : Colors.transparent,
         ),
         child: OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
@@ -1082,7 +1087,7 @@ class _FocusableActionButtonState extends State<_FocusableActionButton> {
           icon: Icon(
             widget.icon,
             size: 18,
-            color: _hasFocus ? const Color(0xFF5DE0C2) : Colors.white,
+            color: _hasFocus ? AppColors.mint : Colors.white,
           ),
           label: Text(
             widget.label,
@@ -1147,10 +1152,10 @@ class _FocusableCategoryTileState extends State<_FocusableCategoryTile> {
         duration: const Duration(milliseconds: 150),
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
-          color: _hasFocus ? const Color(0xFF1D3039) : Colors.transparent,
+          color: _hasFocus ? AppColors.focusFill : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: _hasFocus ? const Color(0xFF5DE0C2) : Colors.transparent,
+            color: _hasFocus ? AppColors.mint : Colors.transparent,
             width: 2,
           ),
         ),
@@ -1163,10 +1168,10 @@ class _FocusableCategoryTileState extends State<_FocusableCategoryTile> {
             ),
           ),
           value: widget.value,
-          activeThumbColor: const Color(0xFF5DE0C2),
+          activeThumbColor: AppColors.mint,
           secondary: Icon(
             Icons.visibility,
-            color: _hasFocus ? const Color(0xFF5DE0C2) : Colors.white38,
+            color: _hasFocus ? AppColors.mint : AppColors.faintText,
           ),
           onChanged: (val) => widget.onChanged(val),
         ),

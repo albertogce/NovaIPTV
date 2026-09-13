@@ -22,6 +22,7 @@ class HomeCenterDashboard extends StatefulWidget {
   final void Function(VodMovie) onMovieTap;
   final void Function(Series) onSeriesTap;
   final XtreamApiClient client;
+  final ({String text, Color color})? accountExpiry;
 
   const HomeCenterDashboard({
     super.key,
@@ -45,6 +46,7 @@ class HomeCenterDashboard extends StatefulWidget {
     required this.onMovieTap,
     required this.onSeriesTap,
     required this.client,
+    this.accountExpiry,
   });
 
   @override
@@ -104,7 +106,7 @@ class _HomeCenterDashboardState extends State<HomeCenterDashboard> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF0B1117), Color(0xFF12232A)],
+          colors: [AppColors.ink, AppColors.dashboardGradEnd],
         ),
       ),
       child: SingleChildScrollView(
@@ -145,23 +147,35 @@ class _HomeCenterDashboardState extends State<HomeCenterDashboard> {
                       icon: Icons.live_tv,
                       value: widget.totalChannels,
                       label: 'canales',
-                      color: const Color(0xFF5DE0C2),
+                      color: AppColors.mint,
                     ),
                     _LibraryStat(
                       icon: Icons.movie_outlined,
                       value: widget.totalMovies,
                       label: 'películas',
-                      color: const Color(0xFFFFC857),
+                      color: AppColors.amber,
                     ),
                     _LibraryStat(
                       icon: Icons.tv_outlined,
                       value: widget.totalSeries,
                       label: 'series',
-                      color: const Color(0xFFFF6B4A),
+                      color: AppColors.accent,
                     ),
                   ],
                 ),
                 const SizedBox(height: 18),
+                if (widget.accountExpiry != null)
+                  Text(
+                    widget.accountExpiry!.text,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: widget.accountExpiry!.color,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                if (widget.accountExpiry != null)
+                  const SizedBox(height: 18),
                 _SearchActionButton(
                   query: widget.globalSearchQuery,
                   focusNode: _searchFocusNode,
@@ -186,7 +200,7 @@ class _HomeCenterDashboardState extends State<HomeCenterDashboard> {
                     _MenuCenterButton(
                       icon: Icons.live_tv,
                       label: 'Canales en Vivo',
-                      accent: const Color(0xFF5DE0C2),
+                      accent: AppColors.mint,
                       subtitle: null,
                       onPressed: widget.onSelectLive,
                       focusNode: _firstButtonFocusNode,
@@ -195,21 +209,21 @@ class _HomeCenterDashboardState extends State<HomeCenterDashboard> {
                     _MenuCenterButton(
                       icon: Icons.movie,
                       label: 'Películas',
-                      accent: const Color(0xFFFFC857),
+                      accent: AppColors.amber,
                       subtitle: null,
                       onPressed: widget.onSelectMovies,
                     ),
                     _MenuCenterButton(
                       icon: Icons.tv_outlined,
                       label: 'Series',
-                      accent: const Color(0xFFFF6B4A),
+                      accent: AppColors.accent,
                       subtitle: null,
                       onPressed: widget.onSelectSeries,
                     ),
                     _MenuCenterButton(
                       icon: Icons.play_circle_fill,
                       label: 'Seguir viendo',
-                      accent: const Color(0xFF5DE0C2),
+                      accent: AppColors.mint,
                       subtitle: null,
                       onPressed: widget.onSelectContinueWatching,
                     ),
@@ -223,12 +237,12 @@ class _HomeCenterDashboardState extends State<HomeCenterDashboard> {
                         if (filteredChannels.isEmpty &&
                             filteredMovies.isEmpty &&
                             filteredSeries.isEmpty)
-                          const Padding(
+                          Padding(
                             padding: EdgeInsets.only(top: 32),
                             child: Text(
                               'No se encontraron resultados',
                               style: TextStyle(
-                                color: Colors.white54,
+                                color: AppColors.subtleText,
                                 fontSize: 16,
                               ),
                             ),
@@ -254,15 +268,15 @@ class _HomeCenterDashboardState extends State<HomeCenterDashboard> {
                                               height: 40,
                                               fit: BoxFit.contain,
                                               errorBuilder: (_, __, ___) =>
-                                                  const Icon(
+                                                  Icon(
                                                     Icons.tv,
-                                                    color: Colors.white54,
+                                                    color: AppColors.subtleText,
                                                     size: 32,
                                                   ),
                                             )
-                                          : const Icon(
+                                          : Icon(
                                               Icons.tv,
-                                              color: Colors.white54,
+                                              color: AppColors.subtleText,
                                               size: 32,
                                             ),
                                       onTap: () => widget.onChannelTap(ch),
@@ -370,7 +384,7 @@ class _DashboardActionButton extends StatelessWidget {
   Widget build(BuildContext context) => IconButton(
     onPressed: onPressed,
     tooltip: tooltip,
-    icon: Icon(icon, size: 20, color: Colors.white70),
+    icon: Icon(icon, size: 20, color: AppColors.bodyText),
     padding: EdgeInsets.zero,
     constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
     visualDensity: VisualDensity.compact,
@@ -419,7 +433,7 @@ class _TvSearchDialogState extends State<_TvSearchDialog> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(32, 20, 32, 0),
           child: Material(
-            color: const Color(0xFF15212A),
+            color: AppColors.panel,
             elevation: 16,
             shadowColor: Colors.black54,
             borderRadius: BorderRadius.circular(24),
@@ -462,7 +476,7 @@ class _TvSearchDialogState extends State<_TvSearchDialog> {
                           hintText: 'Canal, película o serie',
                           prefixIcon: Icon(
                             Icons.search,
-                            color: Color(0xFF5DE0C2),
+                            color: AppColors.mint,
                           ),
                         ),
                         onSubmitted: (_) => _submit(),
@@ -500,14 +514,12 @@ class _TvSearchDialogState extends State<_TvSearchDialog> {
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.white,
                                 backgroundColor: _cancelHasFocus
-                                    ? const Color(
-                                        0xFF5DE0C2,
-                                      ).withValues(alpha: 0.16)
+                                    ? AppColors.mint.withValues(alpha: 0.16)
                                     : Colors.transparent,
                                 side: BorderSide(
                                   color: _cancelHasFocus
-                                      ? const Color(0xFF5DE0C2)
-                                      : Colors.white54,
+                                      ? AppColors.mint
+                                      : AppColors.subtleText,
                                   width: _cancelHasFocus ? 2 : 1,
                                 ),
                               ),
@@ -545,8 +557,8 @@ class _TvSearchDialogState extends State<_TvSearchDialog> {
                             child: FilledButton.icon(
                               style: FilledButton.styleFrom(
                                 backgroundColor: _searchHasFocus
-                                    ? const Color(0xFFFF6B4A)
-                                    : const Color(0xFFB94732),
+                                    ? AppColors.accent
+                                    : AppColors.chipFocus,
                                 side: BorderSide(
                                   color: _searchHasFocus
                                       ? Colors.white
@@ -610,8 +622,8 @@ class _SearchActionButton extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: hasFocus
-                    ? const Color(0xFFFF6B4A)
-                    : const Color(0xFF15212A),
+                    ? AppColors.accent
+                    : AppColors.panel,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
                   color: hasFocus ? Colors.white : Colors.white12,
@@ -622,7 +634,7 @@ class _SearchActionButton extends StatelessWidget {
                 children: [
                   Icon(
                     Icons.search,
-                    color: hasFocus ? Colors.white : const Color(0xFF5DE0C2),
+                    color: hasFocus ? Colors.white : AppColors.mint,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -631,7 +643,7 @@ class _SearchActionButton extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: query.isEmpty ? Colors.white70 : Colors.white,
+                        color: query.isEmpty ? AppColors.bodyText : Colors.white,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -639,7 +651,7 @@ class _SearchActionButton extends StatelessWidget {
                   ),
                   Icon(
                     Icons.arrow_forward_ios,
-                    color: hasFocus ? Colors.white70 : Colors.white38,
+                    color: hasFocus ? AppColors.bodyText : AppColors.faintText,
                     size: 15,
                   ),
                 ],
@@ -672,7 +684,7 @@ class _SearchResultSection extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Row(
             children: [
-              Icon(icon, color: const Color(0xFFE91E63), size: 20),
+              Icon(icon, color: AppColors.pink, size: 20),
               const SizedBox(width: 8),
               Text(
                 title,
@@ -730,10 +742,10 @@ class _SearchResultTileState extends State<_SearchResultTile> {
         duration: const Duration(milliseconds: 150),
         margin: const EdgeInsets.symmetric(vertical: 2),
         decoration: BoxDecoration(
-          color: _hasFocus ? const Color(0xFF2A0A1A) : const Color(0xFF1E1E1E),
+          color: _hasFocus ? AppColors.searchTileFocus : AppColors.searchTile,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: _hasFocus ? const Color(0xFFE91E63) : Colors.white12,
+            color: _hasFocus ? AppColors.pink : Colors.white12,
             width: _hasFocus ? 2 : 1,
           ),
         ),
@@ -749,10 +761,10 @@ class _SearchResultTileState extends State<_SearchResultTile> {
           subtitle: widget.subtitle != null
               ? Text(
                   widget.subtitle!,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  style: TextStyle(color: AppColors.subtleText, fontSize: 12),
                 )
               : null,
-          trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+          trailing: Icon(Icons.chevron_right, color: AppColors.faintText),
           onTap: widget.onTap,
         ),
       ),
@@ -807,7 +819,7 @@ class _MenuCenterButton extends StatelessWidget {
               decoration: BoxDecoration(
                 color: hasFocus
                     ? accent.withValues(alpha: 0.9)
-                    : const Color(0xFF15212A),
+                    : AppColors.panel,
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
                   color: hasFocus
@@ -859,7 +871,7 @@ class _MenuCenterButton extends StatelessWidget {
                     Text(
                       subtitle!,
                       style: TextStyle(
-                        color: hasFocus ? Colors.white70 : Colors.white38,
+                        color: hasFocus ? AppColors.bodyText : AppColors.faintText,
                         fontSize: 11,
                       ),
                     ),
@@ -952,7 +964,7 @@ class _PosterContent extends StatelessWidget {
 }
 
 class _HistoryCard extends StatelessWidget {
-  final _HistoryEntry entry;
+  final HistoryEntry entry;
 
   const _HistoryCard({required this.entry});
 
@@ -1005,8 +1017,8 @@ class _HistoryCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
               child: Text(
                 entry.type == 'movie' ? 'PELÍCULA' : 'SERIE',
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: AppColors.bodyText,
                   fontSize: 9,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
@@ -1033,15 +1045,15 @@ class _ContinueWatchingCard extends StatelessWidget {
         children: [
           Expanded(
             child: imageUrl.isEmpty
-                ? const Center(
-                    child: Icon(Icons.movie, size: 52, color: Colors.white54),
+                ? Center(
+                    child: Icon(Icons.movie, size: 52, color: AppColors.subtleText),
                   )
                 : Image.network(
                     imageUrl,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Center(
-                      child: Icon(Icons.movie, size: 52, color: Colors.white54),
+                    errorBuilder: (_, __, ___) => Center(
+                      child: Icon(Icons.movie, size: 52, color: AppColors.subtleText),
                     ),
                   ),
           ),
@@ -1054,7 +1066,7 @@ class _ContinueWatchingCard extends StatelessWidget {
             progress.fraction >= .95
                 ? 'Completado · ver siguiente'
                 : '${progress.position.inMinutes} min de ${progress.duration.inMinutes} min',
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
+            style: TextStyle(color: AppColors.bodyText, fontSize: 11),
           ),
           const SizedBox(height: 5),
           LinearProgressIndicator(value: progress.fraction),

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:iptv_flutter/core/storage/shared_prefs_storage.dart';
 import 'package:iptv_flutter/data/api/xtream_api_client.dart';
 import 'package:iptv_flutter/data/models/vod_movie.dart';
+import 'package:iptv_flutter/core/theme/app_theme.dart';
 import 'package:iptv_flutter/presentation/player/player_screen.dart';
 
 class MovieDetailScreen extends StatefulWidget {
@@ -93,7 +94,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     final director = info['director'] ?? '';
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1117),
+      backgroundColor: AppColors.ink,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -184,8 +185,8 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                     if (director.toString().isNotEmpty) ...[
                       Text(
                         'Director: $director',
-                        style: const TextStyle(
-                          color: Colors.white70,
+                        style: TextStyle(
+                          color: AppColors.bodyText,
                           fontSize: 14,
                         ),
                       ),
@@ -193,8 +194,8 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                     ],
                     Text(
                       plot.toString(),
-                      style: const TextStyle(
-                        color: Colors.white70,
+                      style: TextStyle(
+                        color: AppColors.bodyText,
                         fontSize: 15,
                         height: 1.4,
                       ),
@@ -233,9 +234,9 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                               boxShadow: hasFocus
                                   ? [
                                       BoxShadow(
-                                        color: const Color(
-                                          0xFFE91E63,
-                                        ).withValues(alpha: 0.5),
+                                        color: AppColors.pink.withValues(
+                                          alpha: 0.5,
+                                        ),
                                         blurRadius: 16,
                                         spreadRadius: 2,
                                       ),
@@ -246,8 +247,8 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                               focusNode: FocusNode(skipTraversal: true),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: hasFocus
-                                    ? const Color(0xFFE91E63)
-                                    : const Color(0xFF880E4F),
+                                    ? AppColors.pink
+                                    : AppColors.movieButtonDark,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 28,
                                   vertical: 16,

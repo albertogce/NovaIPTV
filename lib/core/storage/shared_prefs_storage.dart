@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SharedPrefsStorage {
@@ -56,7 +57,11 @@ class SharedPrefsStorage {
   }
 
   Future<File> _cacheFile(String key) async {
-    final directory = Directory('${Directory.systemTemp.path}/nova_iptv');
-    return File('${directory.path}/$key.json');
+    final safeKey = key.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
+    // El directorio temporal del sistema puede limpiarse solo; el directorio
+    // de soporte de la app persiste entre reinicios.
+    final directory = await getApplicationSupportDirectory();
+    await directory.create(recursive: true);
+    return File('${directory.path}/nova_iptv_$safeKey.json');
   }
 }

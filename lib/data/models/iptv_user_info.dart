@@ -1,6 +1,5 @@
-import 'package:iptv_flutter/core/constants/AppConstants.dart';
+import 'package:iptv_flutter/core/storage/credential_store.dart';
 import 'package:iptv_flutter/core/utils/url_normalizer.dart';
-import 'package:iptv_flutter/core/storage/shared_prefs_storage.dart';
 
 class IptvUserInfo {
   final String username;
@@ -15,27 +14,23 @@ class IptvUserInfo {
     this.isAuthenticated = false,
   });
 
-  factory IptvUserInfo.fromSharedPrefs() {
-    final storage = SharedPrefsStorage();
-    final username = storage.getString('username') ?? '';
-    final password = storage.getString('password') ?? '';
-    final server = storage.getString('server') ?? AppConstants.defaultServer;
+  factory IptvUserInfo.current() {
     return IptvUserInfo(
-      username: username,
-      password: password,
-      server: normalizeUrl(server),
-      isAuthenticated: username.isNotEmpty && password.isNotEmpty,
+      username: CredentialStore.username,
+      password: CredentialStore.password,
+      server: normalizeUrl(CredentialStore.server),
+      isAuthenticated:
+          CredentialStore.username.isNotEmpty &&
+          CredentialStore.password.isNotEmpty &&
+          CredentialStore.server.isNotEmpty,
     );
   }
 
-  Map<String, dynamic> toMap() {
-    return {'username': username, 'password': password, 'server': server};
-  }
-
   static Future<void> save(IptvUserInfo user) async {
-    final storage = SharedPrefsStorage();
-    await storage.setString('username', user.username);
-    await storage.setString('password', user.password);
-    await storage.setString('server', user.server);
+    await CredentialStore.save(
+      username: user.username,
+      password: user.password,
+      server: user.server,
+    );
   }
 }

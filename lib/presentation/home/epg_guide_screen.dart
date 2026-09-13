@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/api/xtream_api_client.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/models/epg_program.dart';
 import '../../data/models/live_channel.dart';
 import '../player/player_screen.dart';
@@ -36,10 +37,8 @@ class _EpgGuideScreenState extends State<EpgGuideScreen> {
       .where((channel) => channel.channelId.toString() == _selected)
       .firstOrNull;
 
-  String _streamUrl(LiveChannel channel) {
-    final base = widget.client.baseUrl.replaceAll(RegExp(r'/$'), '');
-    return '$base/live/${widget.client.username}/${widget.client.password}/${channel.channelId}.ts';
-  }
+  String _streamUrl(LiveChannel channel) =>
+      widget.client.liveStreamUrl(channel.channelId);
 
   Future<void> _select(LiveChannel channel) async {
     final id = channel.channelId.toString();
@@ -55,6 +54,8 @@ class _EpgGuideScreenState extends State<EpgGuideScreen> {
           .map((item) => EpgProgram.fromJson(Map<String, dynamic>.from(item)))
           .toList();
       if (mounted) setState(() => _programs[id] = list);
+    } catch (_) {
+      // Sin guía para este canal; la vista muestra "No hay programación".
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -138,7 +139,7 @@ class _EpgGuideScreenState extends State<EpgGuideScreen> {
         return Padding(
           padding: const EdgeInsets.only(bottom: 14),
           child: Card(
-            color: program.isLive ? const Color(0xFF1D403D) : null,
+            color: program.isLive ? AppColors.epgLive : null,
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: _playChannel,

@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:iptv_flutter/presentation/auth/auth_controller.dart';
-import 'package:iptv_flutter/core/storage/shared_prefs_storage.dart';
+import 'package:iptv_flutter/core/storage/credential_store.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -26,13 +26,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    final storage = SharedPrefsStorage();
-    _serverController.text =
-        storage.getString('server') ?? _serverController.text;
-    _usernameController.text =
-        storage.getString('username') ?? _usernameController.text;
-    _passwordController.text =
-        storage.getString('password') ?? _passwordController.text;
+    _serverController.text = CredentialStore.server;
+    _usernameController.text = CredentialStore.username;
+    _passwordController.text = CredentialStore.password;
   }
 
   @override
@@ -48,6 +44,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   void _submitForm() async {
+    if (ref.read(authStateProvider).isLoading) return;
     if (_formKey.currentState?.validate() ?? false) {
       final server = _serverController.text.trim();
       final username = _usernameController.text.trim();
@@ -58,7 +55,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           .login(server, username, password);
       final authState = ref.read(authStateProvider);
 
-      if (mounted && authState.user != null) {
+      if (!mounted) return;
+      if (authState.user != null) {
         Navigator.pushReplacementNamed(
           context,
           '/home',
@@ -93,6 +91,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authStateProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('IPTV Login')),
       body: Padding(
@@ -186,13 +185,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
+                if (authState.hasError) ...[
+                  Text(
+                    authState.message ?? 'Error de acceso',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Focus(
                   onKeyEvent: (node, event) =>
                       _handleKeyEvent(node, event, null, _passwordFocusNode),
                   child: ElevatedButton(
                     focusNode: _buttonFocusNode,
-                    onPressed: _submitForm,
-                    child: const Text('CONECTAR'),
+                    onPressed: authState.isLoading ? null : _submitForm,
+                    child: authState.isLoading
+                        ? const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              SizedBox(width: 12),
+                              Text('CONECTANDO...'),
+                            ],
+                          )
+                        : const Text('CONECTAR'),
                   ),
                 ),
               ],

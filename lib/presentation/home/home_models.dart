@@ -1,5 +1,3 @@
-part of 'home_screen.dart';
-
 enum ActiveView {
   home,
   live,
@@ -11,13 +9,16 @@ enum ActiveView {
   settings,
 }
 
-class _HistoryEntry {
+/// Categoría sintética que agrupa los canales favoritos en la vista de Directos.
+const favoritesCategoryId = '__favorites__';
+
+class HistoryEntry {
   final String type;
   final String id;
   final String title;
   final String logo;
 
-  const _HistoryEntry({
+  const HistoryEntry({
     required this.type,
     required this.id,
     required this.title,

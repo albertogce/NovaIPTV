@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:iptv_flutter/core/storage/shared_prefs_storage.dart';
@@ -12,14 +11,16 @@ import 'package:iptv_flutter/data/models/vod_category.dart';
 import 'package:iptv_flutter/data/models/series_category.dart';
 import 'package:iptv_flutter/data/models/epg_program.dart';
 import 'package:iptv_flutter/presentation/player/player_screen.dart';
+import 'package:iptv_flutter/presentation/home/home_catalog.dart';
+import 'package:iptv_flutter/presentation/home/home_models.dart';
 import 'package:iptv_flutter/presentation/home/movie_detail_screen.dart';
 import 'package:iptv_flutter/presentation/home/series_detail_screen.dart';
 import 'package:iptv_flutter/presentation/home/search_results_screen.dart';
 import 'package:iptv_flutter/presentation/settings/settings_screen.dart';
 import 'package:iptv_flutter/presentation/home/epg_guide_screen.dart';
 import 'package:iptv_flutter/core/playback/watch_progress_store.dart';
+import 'package:iptv_flutter/core/theme/app_theme.dart';
 
-part 'home_models.dart';
 part 'widgets/library_stat.dart';
 part 'widgets/poster_fallback.dart';
 part 'home_dashboard.dart';
@@ -34,22 +35,9 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-const _favoritesCategoryId = '__favorites__';
-
 class _HomeScreenState extends State<HomeScreen> {
-  late XtreamApiClient _client;
+  late final HomeCatalog _catalog;
   ActiveView _activeView = ActiveView.home;
-
-  List<LiveChannel> _liveChannels = [];
-  List<VodMovie> _movies = [];
-  List<Series> _series = [];
-
-  List<LiveCategory> _liveCategories = [];
-  List<VodCategory> _vodCategories = [];
-  List<SeriesCategory> _seriesCategories = [];
-  List<LiveCategory> _allLiveCategories = [];
-  List<VodCategory> _allVodCategories = [];
-  List<SeriesCategory> _allSeriesCategories = [];
 
   String? _selectedLiveCatId;
   String? _selectedVodCatId;
@@ -61,9 +49,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String _seriesSearchQuery = '';
   String _globalSearchQuery = '';
 
-  bool _isLoading = true;
-  String? _errorMessage;
-
   Timer? _autoRefreshTimer;
   final Map<int, FocusNode> _favoriteFocusNodes = {};
   final FocusNode _epgFocusNode = FocusNode();
@@ -71,17 +56,22 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _client = widget.client;
+    _catalog = HomeCatalog(client: widget.client)..addListener(_onCatalog);
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    _loadData();
+    _catalog.load();
+    _catalog.refreshAccountExpiry();
     _startAutoRefreshTimer();
   }
+
+  void _onCatalog() => setState(() {});
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _autoRefreshTimer?.cancel();
+    _catalog.removeListener(_onCatalog);
+    _catalog.dispose();
     for (final node in _favoriteFocusNodes.values) {
       node.dispose();
     }
@@ -92,313 +82,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _startAutoRefreshTimer() {
     _autoRefreshTimer?.cancel();
-    final storage = SharedPrefsStorage();
-    final refreshStr = storage.getString('settings_auto_refresh_minutes');
+    final refreshStr = SharedPrefsStorage().getString(
+      'settings_auto_refresh_minutes',
+    );
     final minutes = refreshStr != null ? int.tryParse(refreshStr) ?? 0 : 0;
 
     if (minutes > 0) {
       _autoRefreshTimer = Timer.periodic(Duration(minutes: minutes), (_) {
-        _fetchAndCacheRemoteData(silent: true);
+        _catalog.fetchAndCacheRemoteData(silent: true);
       });
     }
   }
 
-  void _applyCategoryFiltersAndOrdering() {
-    final storage = SharedPrefsStorage();
-
-    // Live Categories
-    final hiddenLive = (storage.getStringList('settings_live_cat_hidden') ?? [])
-        .toSet();
-    final liveOrder = storage.getStringList('settings_live_cat_order') ?? [];
-    var filteredLive = _allLiveCategories
-        .where((c) => !hiddenLive.contains(c.categoryId.toString()))
-        .toList();
-    if (liveOrder.isNotEmpty) {
-      filteredLive.sort((a, b) {
-        final indexA = liveOrder.indexOf(a.categoryId.toString());
-        final indexB = liveOrder.indexOf(b.categoryId.toString());
-        if (indexA == -1 && indexB == -1) return 0;
-        if (indexA == -1) return 1;
-        if (indexB == -1) return -1;
-        return indexA.compareTo(indexB);
-      });
-    }
-
-    // Vod Categories
-    final hiddenVod = (storage.getStringList('settings_vod_cat_hidden') ?? [])
-        .toSet();
-    final vodOrder = storage.getStringList('settings_vod_cat_order') ?? [];
-    var filteredVod = _allVodCategories
-        .where((c) => !hiddenVod.contains(c.categoryId.toString()))
-        .toList();
-    if (vodOrder.isNotEmpty) {
-      filteredVod.sort((a, b) {
-        final indexA = vodOrder.indexOf(a.categoryId.toString());
-        final indexB = vodOrder.indexOf(b.categoryId.toString());
-        if (indexA == -1 && indexB == -1) return 0;
-        if (indexA == -1) return 1;
-        if (indexB == -1) return -1;
-        return indexA.compareTo(indexB);
-      });
-    }
-
-    // Series Categories
-    final hiddenSeries =
-        (storage.getStringList('settings_series_cat_hidden') ?? []).toSet();
-    final seriesOrder =
-        storage.getStringList('settings_series_cat_order') ?? [];
-    var filteredSeries = _allSeriesCategories
-        .where((c) => !hiddenSeries.contains(c.categoryId.toString()))
-        .toList();
-    if (seriesOrder.isNotEmpty) {
-      filteredSeries.sort((a, b) {
-        final indexA = seriesOrder.indexOf(a.categoryId.toString());
-        final indexB = seriesOrder.indexOf(b.categoryId.toString());
-        if (indexA == -1 && indexB == -1) return 0;
-        if (indexA == -1) return 1;
-        if (indexB == -1) return -1;
-        return indexA.compareTo(indexB);
-      });
-    }
-
-    _liveCategories = filteredLive;
-    _vodCategories = filteredVod;
-    _seriesCategories = filteredSeries;
-  }
-
-  Future<void> _loadData({bool forceRefresh = false}) async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    if (!forceRefresh) {
-      final hasCachedData = await _tryLoadLocalCache();
-      if (hasCachedData) {
-        _applyCategoryFiltersAndOrdering();
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-    }
-
-    await _fetchAndCacheRemoteData(silent: false);
-  }
-
-  Future<bool> _tryLoadLocalCache() async {
-    final storage = SharedPrefsStorage();
-    final cachedChannels = await storage.getCacheString('cache_live_channels');
-    final cachedMovies = await storage.getCacheString('cache_movies');
-    final cachedSeries = await storage.getCacheString('cache_series');
-    final cachedLiveCats = await storage.getCacheString(
-      'cache_live_categories',
-    );
-    final cachedVodCats = await storage.getCacheString('cache_vod_categories');
-    final cachedSeriesCats = await storage.getCacheString(
-      'cache_series_categories',
-    );
-
-    if (cachedChannels == null ||
-        cachedMovies == null ||
-        cachedSeries == null ||
-        cachedLiveCats == null ||
-        cachedVodCats == null ||
-        cachedSeriesCats == null) {
-      debugPrint('Caché IPTV no disponible; se solicitarán los datos remotos.');
-      return false;
-    }
-
-    try {
-      final List rawCh = json.decode(cachedChannels);
-      final List rawMov = json.decode(cachedMovies);
-      final List rawSer = json.decode(cachedSeries);
-      final List rawLCat = json.decode(cachedLiveCats);
-      final List rawVCat = json.decode(cachedVodCats);
-      final List rawSCat = json.decode(cachedSeriesCats);
-
-      _liveChannels = rawCh
-          .map((e) => LiveChannel.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      _movies = rawMov
-          .map((e) => VodMovie.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      _series = rawSer
-          .map((e) => Series.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      _allLiveCategories = rawLCat
-          .map((e) => LiveCategory.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      _allVodCategories = rawVCat
-          .map((e) => VodCategory.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      _allSeriesCategories = rawSCat
-          .map((e) => SeriesCategory.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      _liveCategories = List.of(_allLiveCategories);
-      _vodCategories = List.of(_allVodCategories);
-      _seriesCategories = List.of(_allSeriesCategories);
-
-      final hasContent =
-          _liveChannels.isNotEmpty || _movies.isNotEmpty || _series.isNotEmpty;
-      debugPrint(
-        hasContent
-            ? 'Caché IPTV cargada; no se solicitan listados remotos.'
-            : 'Caché IPTV vacía; se solicitarán los datos remotos.',
-      );
-      return hasContent;
-    } catch (_) {
-      debugPrint('Caché IPTV inválida; se solicitarán los datos remotos.');
-      return false;
-    }
-  }
-
-  Future<void> _fetchAndCacheRemoteData({bool silent = false}) async {
-    try {
-      Future<List<dynamic>> loadListSafely(
-        String name,
-        Future<List<dynamic>> request,
-      ) async {
-        try {
-          return await request;
-        } catch (error) {
-          debugPrint(
-            'No se pudo cargar $name; se continuará sin esos datos: $error',
-          );
-          return <dynamic>[];
-        }
-      }
-
-      final results = await Future.wait([
-        loadListSafely('canales en vivo', _client.getLiveStreams()),
-        loadListSafely('películas', _client.getVodStreams()),
-        loadListSafely('series', _client.getSeries()),
-        loadListSafely(
-          'categorías de canales en vivo',
-          _client.getLiveCategories(),
-        ),
-        loadListSafely('categorías de películas', _client.getVodCategories()),
-        loadListSafely('categorías de series', _client.getSeriesCategories()),
-      ]);
-
-      final rawChannels = results[0];
-      final rawMovies = results[1];
-      final rawSeries = results[2];
-      final rawLiveCats = results[3];
-      final rawVodCats = results[4];
-      final rawSeriesCats = results[5];
-
-      final channelsParsed = rawChannels
-          .map((e) => LiveChannel.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      final moviesParsed = rawMovies
-          .map((e) => VodMovie.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      final seriesParsed = rawSeries
-          .map((e) => Series.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      final liveCatsParsed = rawLiveCats
-          .map((e) => LiveCategory.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      final vodCatsParsed = rawVodCats
-          .map((e) => VodCategory.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      final seriesCatsParsed = rawSeriesCats
-          .map((e) => SeriesCategory.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-
-      // A manual refresh deliberately keeps the complete response on disk.
-      // Automatic refreshes can use the compact mode selected in Settings.
-      final storage = SharedPrefsStorage();
-      final compactCache =
-          storage.getBool('settings_store_visible_only') ?? false;
-      List<T> keepVisible<T>(
-        List<T> items,
-        String Function(T) categoryId,
-        Set<String> hidden,
-      ) {
-        if (!compactCache) return items;
-        return items
-            .where((item) => !hidden.contains(categoryId(item)))
-            .toList();
-      }
-
-      final hiddenLive =
-          (storage.getStringList('settings_live_cat_hidden') ?? []).toSet();
-      final hiddenVod = (storage.getStringList('settings_vod_cat_hidden') ?? [])
-          .toSet();
-      final hiddenSeries =
-          (storage.getStringList('settings_series_cat_hidden') ?? []).toSet();
-      final channelsToCache = keepVisible(
-        channelsParsed,
-        (item) => item.categoryId.toString(),
-        hiddenLive,
-      );
-      final moviesToCache = keepVisible(
-        moviesParsed,
-        (item) => item.categoryId.toString(),
-        hiddenVod,
-      );
-      final seriesToCache = keepVisible(
-        seriesParsed,
-        (item) => item.categoryId.toString(),
-        hiddenSeries,
-      );
-
-      await storage.setCacheString(
-        'cache_live_channels',
-        json.encode(channelsToCache.map((e) => e.toJson()).toList()),
-      );
-      await storage.setCacheString(
-        'cache_movies',
-        json.encode(moviesToCache.map((e) => e.toJson()).toList()),
-      );
-      await storage.setCacheString(
-        'cache_series',
-        json.encode(seriesToCache.map((e) => e.toJson()).toList()),
-      );
-      await storage.setCacheString(
-        'cache_live_categories',
-        json.encode(liveCatsParsed.map((e) => e.toJson()).toList()),
-      );
-      await storage.setCacheString(
-        'cache_vod_categories',
-        json.encode(vodCatsParsed.map((e) => e.toJson()).toList()),
-      );
-      await storage.setCacheString(
-        'cache_series_categories',
-        json.encode(seriesCatsParsed.map((e) => e.toJson()).toList()),
-      );
-
-      if (mounted) {
-        _liveChannels = channelsParsed;
-        _movies = moviesParsed;
-        _series = seriesParsed;
-        _allLiveCategories = liveCatsParsed;
-        _allVodCategories = vodCatsParsed;
-        _allSeriesCategories = seriesCatsParsed;
-        _liveCategories = List.of(_allLiveCategories);
-        _vodCategories = List.of(_allVodCategories);
-        _seriesCategories = List.of(_allSeriesCategories);
-        _applyCategoryFiltersAndOrdering();
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted && !silent) {
-        setState(() {
-          _errorMessage = 'Error al cargar los datos de IPTV: $e';
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  String _buildStreamUrl(LiveChannel channel) {
-    final base = _client.baseUrl.replaceAll(RegExp(r'/$'), '');
-    return '$base/live/${_client.username}/${_client.password}/${channel.channelId}.ts';
-  }
+  String _buildStreamUrl(LiveChannel channel) =>
+      _catalog.client.liveStreamUrl(channel.channelId);
 
   void _onChannelTap(
     LiveChannel channel,
@@ -441,7 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onMovieTap(VodMovie movie) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MovieDetailScreen(movie: movie, client: _client),
+        builder: (_) => MovieDetailScreen(movie: movie, client: _catalog.client),
       ),
     );
   }
@@ -451,14 +148,14 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(
         builder: (_) => SeriesDetailScreen(
           series: series,
-          client: _client,
+          client: _catalog.client,
           initialEpisodeId: initialEpisodeId,
         ),
       ),
     );
   }
 
-  List<_HistoryEntry> _historyEntries(
+  List<HistoryEntry> _historyEntries(
     List<VodMovie> movies,
     List<Series> series,
   ) {
@@ -479,7 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (type == 'movie') {
             final movie = moviesById[id];
             if (movie == null) return null;
-            return _HistoryEntry(
+            return HistoryEntry(
               type: type,
               id: id,
               title: movie.title,
@@ -489,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (type == 'series') {
             final item = seriesById[id];
             if (item == null) return null;
-            return _HistoryEntry(
+            return HistoryEntry(
               type: type,
               id: id,
               title: item.title,
@@ -498,7 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
           return null;
         })
-        .whereType<_HistoryEntry>()
+        .whereType<HistoryEntry>()
         .toList();
   }
 
@@ -517,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await storage.setStringList('favorite_channels', favList);
 
     setState(() {
-      _liveChannels = _liveChannels.map((c) {
+      _catalog.liveChannels = _catalog.liveChannels.map((c) {
         if (c.channelId == channel.channelId) {
           return c.copyWith(isFavorite: isFavNow);
         }
@@ -535,7 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 : 'Eliminado de Favoritos: ${channel.channelName}',
           ),
           backgroundColor: isFavNow
-              ? const Color(0xFFE91E63)
+              ? AppColors.pink
               : Colors.grey[800],
         ),
       );
@@ -544,7 +241,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _reorderFavoriteChannels(int oldIndex, int newIndex) async {
     final favChannels = _orderedFavoriteChannels(
-      _liveChannels.where((c) => c.isFavorite).toList(),
+      _catalog.liveChannels.where((c) => c.isFavorite).toList(),
     );
 
     if (favChannels.isEmpty) return;
@@ -561,8 +258,10 @@ class _HomeScreenState extends State<HomeScreen> {
     await storage.setStringList('favorite_channels', newFavIds);
 
     setState(() {
-      final nonFavs = _liveChannels.where((c) => !c.isFavorite).toList();
-      _liveChannels = [...favChannels, ...nonFavs];
+      final nonFavs = _catalog.liveChannels
+          .where((c) => !c.isFavorite)
+          .toList();
+      _catalog.liveChannels = [...favChannels, ...nonFavs];
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -584,7 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _moveFavoriteChannel(int index, int direction) {
     final favorites = _orderedFavoriteChannels(
-      _liveChannels.where((channel) => channel.isFavorite).toList(),
+      _catalog.liveChannels.where((channel) => channel.isFavorite).toList(),
     );
     final targetIndex = index + direction;
     if (index < 0 || targetIndex < 0 || targetIndex >= favorites.length) {
@@ -603,12 +302,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openLiveChannels() {
-    final hasFavorites = _liveChannels.any((channel) => channel.isFavorite);
+    final hasFavorites = _catalog.liveChannels.any((c) => c.isFavorite);
     setState(() {
       _selectedLiveCatId = hasFavorites
-          ? _favoritesCategoryId
-          : (_liveCategories.isNotEmpty
-                ? _liveCategories.first.categoryId.toString()
+          ? favoritesCategoryId
+          : (_catalog.liveCategories.isNotEmpty
+                ? _catalog.liveCategories.first.categoryId.toString()
                 : null);
       _activeView = ActiveView.live;
     });
@@ -678,8 +377,29 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  List<LiveChannel> _orderedFavoriteChannels(List<LiveChannel> channels) {
-    final favoriteIds =
+  /// Texto de caducidad de cuenta o null si es ilimitada/desconocida.
+  ({String text, Color color})? _accountExpiry() {
+    final seconds = int.tryParse(
+      SharedPrefsStorage().getString('account_exp_date') ?? '',
+    );
+    if (seconds == null || seconds <= 0) return null;
+    final daysLeft = DateTime.fromMillisecondsSinceEpoch(
+      seconds * 1000,
+    ).difference(DateTime.now()).inDays;
+    if (daysLeft < 0) {
+      return (text: 'Suscripción caducada', color: Colors.redAccent);
+    }
+    if (daysLeft == 0) {
+      return (text: 'La suscripción caduca hoy', color: AppColors.amber);
+    }
+    final days = daysLeft == 1 ? '1 día' : '$daysLeft días';
+    return (
+      text: 'La suscripción caduca en $days',
+      color: daysLeft <= 7 ? AppColors.amber : AppColors.subtleText,
+    );
+  }
+
+  List<LiveChannel> _orderedFavoriteChannels(List<LiveChannel> channels) {    final favoriteIds =
         SharedPrefsStorage().getStringList('favorite_channels') ?? [];
     final byId = {
       for (final channel in channels) channel.channelId.toString(): channel,
@@ -688,13 +408,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildBody() {
-    if (_isLoading) {
+    if (_catalog.isLoading) {
       return const Center(
-        child: CircularProgressIndicator(color: Color(0xFFE91E63)),
+        child: CircularProgressIndicator(color: AppColors.pink),
       );
     }
 
-    if (_errorMessage != null) {
+    if (_catalog.errorMessage != null) {
       return Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
@@ -711,13 +431,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 12),
                 SelectableText(
-                  _errorMessage!,
+                  _catalog.errorMessage!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70),
+                  style: TextStyle(color: AppColors.bodyText),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () => _loadData(forceRefresh: true),
+                  onPressed: () => _catalog.load(forceRefresh: true),
                   child: const Text('Reintentar'),
                 ),
               ],
@@ -727,33 +447,15 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    final visibleLiveCatIds = _liveCategories
-        .map((c) => c.categoryId.toString())
-        .toSet();
-    final visibleLiveChannels = _liveChannels
-        .where((c) => visibleLiveCatIds.contains(c.categoryId.toString()))
-        .toList();
+    final visibleLiveChannels = _catalog.visibleLiveChannels;
+    final visibleMovies = _catalog.visibleMovies;
+    final visibleSeries = _catalog.visibleSeries;
 
-    final visibleVodCatIds = _vodCategories
-        .map((c) => c.categoryId.toString())
-        .toSet();
-    final visibleMovies = _movies
-        .where((m) => visibleVodCatIds.contains(m.categoryId.toString()))
+    final favChannels = _catalog.liveChannels
+        .where((c) => c.isFavorite)
         .toList();
-
-    final visibleSeriesCatIds = _seriesCategories
-        .map((c) => c.categoryId.toString())
-        .toSet();
-    final visibleSeries = _series
-        .where((s) => visibleSeriesCatIds.contains(s.categoryId.toString()))
-        .toList();
-
-    final favChannels = _liveChannels.where((c) => c.isFavorite).toList();
     final orderedFavChannels = _orderedFavoriteChannels(favChannels);
-    final liveCategoriesWithFavorites = [
-      LiveCategory(categoryId: _favoritesCategoryId, categoryName: 'Favoritos'),
-      ..._liveCategories,
-    ];
+    final liveCategoriesWithFavorites = _catalog.liveCategoriesWithFavorites;
 
     switch (_activeView) {
       case ActiveView.home:
@@ -768,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onSelectContinueWatching: () =>
               _navigateTo(ActiveView.continueWatching),
           onSelectSettings: () => _navigateTo(ActiveView.settings),
-          onRefresh: () => _loadData(forceRefresh: true),
+          onRefresh: () => _catalog.load(forceRefresh: true),
           globalSearchQuery: _globalSearchQuery,
           onGlobalSearchChanged: (q) => setState(() => _globalSearchQuery = q),
           allChannels: visibleLiveChannels,
@@ -805,24 +507,25 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           onMovieTap: _onMovieTap,
           onSeriesTap: _onSeriesTap,
-          client: _client,
+          client: _catalog.client,
+          accountExpiry: _accountExpiry(),
         );
       case ActiveView.settings:
         return SettingsScreen(
-          client: _client,
-          liveCategories: _allLiveCategories,
-          vodCategories: _allVodCategories,
-          seriesCategories: _allSeriesCategories,
+          client: _catalog.client,
+          liveCategories: _catalog.allLiveCategories,
+          vodCategories: _catalog.allVodCategories,
+          seriesCategories: _catalog.allSeriesCategories,
           onSettingsSaved: (newClient) {
             final credentialsChanged =
-                newClient.baseUrl != _client.baseUrl ||
-                newClient.username != _client.username ||
-                newClient.password != _client.password;
-            _client = newClient;
+                newClient.baseUrl != _catalog.client.baseUrl ||
+                newClient.username != _catalog.client.username ||
+                newClient.password != _catalog.client.password;
+            _catalog.updateClient(newClient);
             _startAutoRefreshTimer();
             // Only a changed IPTV account invalidates the current data.
             // Category and appearance changes continue using the local cache.
-            _loadData(forceRefresh: credentialsChanged);
+            _catalog.load(forceRefresh: credentialsChanged);
             _navigateTo(ActiveView.home);
           },
         );
@@ -830,7 +533,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return GridViewContentView<LiveChannel>(
           items: orderedFavChannels,
           itemBuilder: (channel) =>
-              LiveChannelCard(channel: channel, client: _client),
+              LiveChannelCard(channel: channel, client: _catalog.client),
           onTap: (channel) => _onChannelTap(
             channel,
             ActiveView.live,
@@ -849,7 +552,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Expanded(
               child: historyEntries.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -870,12 +573,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           SizedBox(height: 6),
                           Text(
                             'Cuando reproduzcas algo, aparecerá aquí.',
-                            style: TextStyle(color: Colors.white54),
+                            style: TextStyle(color: AppColors.subtleText),
                           ),
                         ],
                       ),
                     )
-                  : GridViewContentView<_HistoryEntry>(
+                  : GridViewContentView<HistoryEntry>(
                       items: historyEntries,
                       itemBuilder: (entry) => _HistoryCard(entry: entry),
                       onTap: (entry) {
@@ -942,7 +645,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onLongPress: _removeContinueWatching,
         );
       case ActiveView.live:
-        final catFiltered = _selectedLiveCatId == _favoritesCategoryId
+        final catFiltered = _selectedLiveCatId == favoritesCategoryId
             ? orderedFavChannels
             : _selectedLiveCatId == null
             ? visibleLiveChannels
@@ -964,7 +667,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   )
                   .toList();
 
-        final isFavSelected = _selectedLiveCatId == _favoritesCategoryId;
+        final isFavSelected = _selectedLiveCatId == favoritesCategoryId;
 
         return CategoryContentView<LiveCategory, LiveChannel>(
           onBack: () => _navigateTo(ActiveView.home),
@@ -982,26 +685,28 @@ class _HomeScreenState extends State<HomeScreen> {
             IconButton(
               focusNode: _epgFocusNode,
               tooltip: 'Guía EPG completa',
-              icon: const Icon(
+              icon: Icon(
                 Icons.calendar_month,
-                color: Colors.white70,
+                color: AppColors.bodyText,
                 size: 20,
               ),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) =>
-                      EpgGuideScreen(client: _client, channels: _liveChannels),
+                  builder: (_) => EpgGuideScreen(
+                    client: _catalog.client,
+                    channels: liveFiltered,
+                  ),
                 ),
               ),
             ),
             IconButton(
               tooltip: 'Actualizar',
-              icon: const Icon(Icons.refresh, color: Colors.white70, size: 20),
-              onPressed: () => _loadData(forceRefresh: true),
+              icon: Icon(Icons.refresh, color: AppColors.bodyText, size: 20),
+              onPressed: () => _catalog.load(forceRefresh: true),
             ),
           ],
           itemBuilder: (channel) =>
-              LiveChannelCard(channel: channel, client: _client),
+              LiveChannelCard(channel: channel, client: _catalog.client),
           onTap: (channel) => _onChannelTap(
             channel,
             ActiveView.live,
@@ -1040,7 +745,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return CategoryContentView<VodCategory, VodMovie>(
           onBack: () => _navigateTo(ActiveView.home),
           categoriesOnSide: true,
-          categories: _vodCategories,
+          categories: _catalog.vodCategories,
           selectedCategoryId: _selectedVodCatId,
           getCatId: (c) => c.categoryId,
           getCatName: (c) => c.categoryName,
@@ -1053,7 +758,7 @@ class _HomeScreenState extends State<HomeScreen> {
             imageUrl: movie.logo,
             icon: Icons.movie_outlined,
             metadata: movie.year > 0 ? movie.year.toString() : 'Película',
-            accent: const Color(0xFFFFC857),
+            accent: AppColors.amber,
           ),
           onTap: _onMovieTap,
         );
@@ -1080,7 +785,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return CategoryContentView<SeriesCategory, Series>(
           onBack: () => _navigateTo(ActiveView.home),
           categoriesOnSide: true,
-          categories: _seriesCategories,
+          categories: _catalog.seriesCategories,
           selectedCategoryId: _selectedSeriesCatId,
           getCatId: (c) => c.categoryId,
           getCatName: (c) => c.categoryName,
@@ -1093,7 +798,7 @@ class _HomeScreenState extends State<HomeScreen> {
             imageUrl: s.logo,
             icon: Icons.tv_outlined,
             metadata: s.year > 0 ? s.year.toString() : 'Serie',
-            accent: const Color(0xFFFF6B4A),
+            accent: AppColors.accent,
           ),
           onTap: _onSeriesTap,
         );
