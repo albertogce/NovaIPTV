@@ -32,10 +32,8 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
 
   // FocusNodes for keyboard navigation
   final FocusNode _seasonListFocusNode = FocusNode();
-  // Key to track first episode item focus
+  // ponytail: single node for first/target episode; two nodes left one detached.
   final FocusNode _firstEpisodeFocusNode = FocusNode();
-  // ponytail: single node for the episode coming from Seguir viendo.
-  final FocusNode _targetEpisodeFocusNode = FocusNode();
 
   // ponytail: entry value wins at open; later plays override it.
   String? _sessionEpisodeId;
@@ -56,7 +54,6 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
   void dispose() {
     _seasonListFocusNode.dispose();
     _firstEpisodeFocusNode.dispose();
-    _targetEpisodeFocusNode.dispose();
     super.dispose();
   }
 
@@ -99,11 +96,11 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
     return null;
   }
 
-  void _focusTargetEpisode() {
+  void _requestEpisodeFocus() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _targetEpisodeFocusNode.requestFocus();
-      final ctx = _targetEpisodeFocusNode.context;
+      if (!mounted || _currentEpisodes.isEmpty) return;
+      _firstEpisodeFocusNode.requestFocus();
+      final ctx = _firstEpisodeFocusNode.context;
       if (ctx != null) {
         Scrollable.ensureVisible(
           ctx,
@@ -113,6 +110,21 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         );
       }
     });
+  }
+
+  /// Index in [_currentEpisodes] that owns [_firstEpisodeFocusNode]:
+  /// the last-watched episode if visible, else the first one.
+  int get _focusedEpisodeIndex {
+    final target = _targetEpisodeId;
+    if (target != null) {
+      final episodes = _currentEpisodes;
+      for (var i = 0; i < episodes.length; i++) {
+        final id = (episodes[i]['id'] ?? episodes[i]['stream_id'])
+            ?.toString();
+        if (id == target) return i;
+      }
+    }
+    return 0;
   }
 
   Future<void> _loadSeriesInfo() async {
@@ -131,17 +143,15 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         if (target != null) {
           selected = _seasonForEpisode(episodesMap, target) ?? selected;
         }
-        final shouldFocusTarget =
-            widget.initialEpisodeId != null &&
-            target != null &&
-            selected != null &&
-            _seasonForEpisode(episodesMap, target) != null;
+        final shouldFocusEpisodes = selected != null &&
+            _episodesMap(data)[selected] is List &&
+            (_episodesMap(data)[selected] as List).isNotEmpty;
         setState(() {
           _seriesData = data;
           _selectedSeason = selected;
           _isLoading = false;
         });
-        if (shouldFocusTarget) _focusTargetEpisode();
+        if (shouldFocusEpisodes) _requestEpisodeFocus();
       }
     } catch (_) {
       if (mounted) {
@@ -317,11 +327,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                       selectedSeason: _selectedSeason,
                       onSeasonSelected: (s) {
                         setState(() => _selectedSeason = s);
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted && _currentEpisodes.isNotEmpty) {
-                            _firstEpisodeFocusNode.requestFocus();
-                          }
-                        });
+                        _requestEpisodeFocus();
                       },
                       seasonFocusNode: _seasonListFocusNode,
                       firstEpisodeFocusNode: _firstEpisodeFocusNode,
@@ -356,12 +362,10 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                               return _EpisodeCard(
                                 episode: ep,
                                 isLastWatched: isTarget,
-                                focusNode: isTarget
-                                    ? _targetEpisodeFocusNode
-                                    : (index == 0
-                                          ? _firstEpisodeFocusNode
-                                          : null),
-                                onArrowUp: index == 0
+                                focusNode: index == _focusedEpisodeIndex
+                                    ? _firstEpisodeFocusNode
+                                    : null,
+                                onArrowUp: index < episodeColumns
                                     ? () => _seasonListFocusNode.requestFocus()
                                     : null,
                                 onPlay: () => _playEpisode(ep),
@@ -590,7 +594,8 @@ class _SeasonSelector extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: Focus(
-              focusNode: index == 0 ? seasonFocusNode : null,
+              // ponytail: the node follows the selected season so ↑ lands back on it.
+              focusNode: isSelected ? seasonFocusNode : null,
               onKeyEvent: (node, event) {
                 if (event is KeyDownEvent) {
                   if (event.logicalKey == LogicalKeyboardKey.select ||
@@ -626,6 +631,18 @@ class _SeasonSelector extends StatelessWidget {
                     backgroundColor: hasFocus
                         ? AppColors.chipFocus
                         : AppColors.focusFill,
+                    // ponytail: selectedColor hides focus; white border marks it.
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(
+                        color: hasFocus
+                            ? Colors.white
+                            : (isSelected
+                                  ? Colors.white24
+                                  : Colors.transparent),
+                        width: hasFocus ? 2 : 1,
+                      ),
+                    ),
                     onSelected: (_) => onSeasonSelected(season),
                   );
                 },
@@ -663,13 +680,34 @@ class _EpisodeCard extends StatefulWidget {
 class _EpisodeCardState extends State<_EpisodeCard> {
   bool _hasFocus = false;
 
-  late final FocusNode _focusNode;
+  late FocusNode _focusNode;
+  bool _ownsNode = false;
 
   @override
   void initState() {
     super.initState();
-    _focusNode = widget.focusNode ?? FocusNode();
+    _attach(widget.focusNode);
+  }
+
+  @override
+  void didUpdateWidget(covariant _EpisodeCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focusNode != widget.focusNode) {
+      _detach();
+      _attach(widget.focusNode);
+    }
+  }
+
+  void _attach(FocusNode? node) {
+    _ownsNode = node == null;
+    _focusNode = node ?? FocusNode();
     _focusNode.addListener(_onFocusChange);
+    _hasFocus = _focusNode.hasFocus;
+  }
+
+  void _detach() {
+    _focusNode.removeListener(_onFocusChange);
+    if (_ownsNode) _focusNode.dispose();
   }
 
   void _onFocusChange() {
@@ -678,9 +716,7 @@ class _EpisodeCardState extends State<_EpisodeCard> {
 
   @override
   void dispose() {
-    _focusNode.removeListener(_onFocusChange);
-    // Only dispose if we created it ourselves
-    if (widget.focusNode == null) _focusNode.dispose();
+    _detach();
     super.dispose();
   }
 
