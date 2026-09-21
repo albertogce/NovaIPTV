@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Los paneles IPTV (Xtream Codes) los introduce el usuario y suelen servir
+  contenido por HTTP sin cifrar en hosts arbitrarios y desconocidos, por lo que
+  no podemos restringir el cleartext a dominios concretos. Se permite de forma
+  global; si un panel usa HTTPS, el tráfico irá cifrado igualmente.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

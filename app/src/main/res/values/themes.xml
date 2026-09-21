@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Splash animado (androidx.core:core-splashscreen): logo centrado sobre el
+         ink de la app, con salida en escala+fade gestionada por el sistema. -->
+    <style name="Theme.Nova.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FF0B1117</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="windowSplashScreenAnimationDuration">350</item>
+        <item name="postSplashScreenTheme">@style/Theme.Nova</item>
+        <item name="android:statusBarColor">#FF0B1117</item>
+        <item name="android:navigationBarColor">#FF0B1117</item>
+    </style>
+    <style name="Theme.Nova" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF0B1117</item>
+        <item name="android:statusBarColor">#FF0B1117</item>
+        <item name="android:navigationBarColor">#FF0B1117</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
