@@ -30,7 +30,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +55,8 @@ import com.algoce95.novaiptv.data.model.VodMovie
 import com.algoce95.novaiptv.data.metadata.PosterType
 import com.algoce95.novaiptv.presentation.tv.rememberTvFocus
 import com.algoce95.novaiptv.presentation.tv.tvPress
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -64,7 +65,6 @@ import org.json.JSONObject
 fun MovieDetailScreen(movie: VodMovie, onPlay: () -> Unit) {
     var vodInfo by remember(movie.movieId) { mutableStateOf<JSONObject?>(null) }
     val playFocus = remember { FocusRequester() }
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(movie.movieId) {
         playFocus.requestFocus()
@@ -84,18 +84,21 @@ fun MovieDetailScreen(movie: VodMovie, onPlay: () -> Unit) {
     }
 
     fun play() {
-        scope.launch {
-            AppContainer.prefs.pushHistory("movie:${movie.movieId}")
-            AppContainer.playerSession = PlayerSession(
-                items = listOf(QueueItem(streamUrl(), movie.title)),
-                index = 0,
-                title = movie.title,
-                progressId = "movie:${movie.movieId}",
-                isLive = false,
-                poster = movie.logo,
-            )
-            onPlay()
-        }
+        AppContainer.playerSession = PlayerSession(
+            items = listOf(QueueItem(streamUrl(), movie.title)),
+            index = 0,
+            title = movie.title,
+            progressId = "movie:${movie.movieId}",
+            isLive = false,
+            poster = movie.logo,
+            // El historial se escribe al arrancar la reproducción, no al pulsar.
+            onPlaybackStarted = {
+                CoroutineScope(Dispatchers.IO).launch {
+                    AppContainer.prefs.pushHistory("movie:${movie.movieId}")
+                }
+            },
+        )
+        onPlay()
     }
 
     val info = vodInfo?.optJSONObject("info")

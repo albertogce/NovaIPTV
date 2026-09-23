@@ -4,15 +4,22 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
@@ -26,11 +33,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -48,8 +63,12 @@ import com.algoce95.novaiptv.data.model.LiveChannel
 import com.algoce95.novaiptv.data.model.WatchProgress
 import com.algoce95.novaiptv.data.metadata.PosterType
 import com.algoce95.novaiptv.presentation.tv.MarqueeText
+import com.algoce95.novaiptv.presentation.tv.isKeyDown
+import com.algoce95.novaiptv.presentation.tv.requestFocusReady
 import com.algoce95.novaiptv.presentation.tv.rememberTvFocus
 import com.algoce95.novaiptv.presentation.tv.tvFocusScale
+import com.algoce95.novaiptv.presentation.tv.tvPress
+import kotlinx.coroutines.launch
 
 /** Paridad con la vista `ActiveView.favorites` (rejilla + reordenado). */
 @Composable
@@ -154,7 +173,11 @@ private fun HistoryCard(entry: HistoryEntry) {
     }
 }
 
-/** Paridad con la vista `ActiveView.continueWatching`. */
+/**
+ * "Seguir viendo" en dos carruseles, series y películas. El almacén guarda lo
+ * más reciente al frente, así que el extremo izquierdo de cada fila es lo
+ * último que se ha estado viendo.
+ */
 @Composable
 fun ContinueWatchingView(
     items: List<WatchProgress>,
@@ -163,21 +186,159 @@ fun ContinueWatchingView(
     onLongPress: (WatchProgress) -> Unit,
     onColorKey: ((Int) -> Boolean)? = null,
 ) {
-    GridContentView(
-        items = items,
-        itemKey = { it.id },
-        columns = 0,
-        itemContent = { ContinueWatchingCard(progress = it, imageUrl = imageFor(it)) },
-        onTap = onTap,
-        onLongPress = onLongPress,
-        onColorKey = onColorKey,
-    )
+    val series = items.filterNot { it.id.startsWith("movie:") }
+    val movies = items.filter { it.id.startsWith("movie:") }
+    val seriesState = rememberLazyListState()
+    val moviesState = rememberLazyListState()
+    val rows = buildList {
+        if (series.isNotEmpty()) add(Triple("Series", series, seriesState))
+        if (movies.isNotEmpty()) add(Triple("Películas", movies, moviesState))
+    }
+
+    if (rows.isEmpty()) {
+        EmptyState(
+            icon = Icons.Filled.History,
+            title = "Nada para continuar",
+            hint = "Empieza una película o un episodio y aparecerá aquí.",
+            modifier = Modifier.fillMaxSize(),
+        )
+        return
+    }
+
+    val nodes = remember { mutableStateMapOf<String, FocusRequester>() }
+    val scope = rememberCoroutineScope()
+
+    // Movimiento explícito: la escala de foco infla los límites del ítem y
+    // Compose descarta al vecino en la búsqueda lateral; en vertical, además,
+    // el nodo destino puede estar fuera del carrusel y hay que desplazarlo.
+    fun focusCell(row: Int, index: Int) {
+        val target = rows.getOrNull(row) ?: return
+        val list = target.second
+        val pos = index.coerceIn(0, list.lastIndex)
+        val id = list[pos].id
+        scope.launch {
+            target.third.scrollToItem(pos)
+            nodes.getOrPut(id) { FocusRequester() }.requestFocusReady()
+        }
+    }
+
+    // Al entrar y tras quitar un progreso (pulsación larga), el foco vuelve a
+    // la primera tarjeta: si no, se queda huérfano con la tarjeta borrada.
+    LaunchedEffect(items) { focusCell(0, 0) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                event.isKeyDown() && onColorKey?.invoke(event.nativeKeyEvent.keyCode) == true
+            },
+    ) {
+        rows.forEachIndexed { rowIndex, row ->
+            ContinueRow(
+                title = row.first,
+                items = row.second,
+                state = row.third,
+                nodes = nodes,
+                imageFor = imageFor,
+                onTap = onTap,
+                onLongPress = onLongPress,
+                onMoveTo = ::focusCell,
+                rowIndex = rowIndex,
+                isLastRow = rowIndex == rows.lastIndex,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
 }
 
 @Composable
-private fun ContinueWatchingCard(progress: WatchProgress, imageUrl: String) {
-    val focus = rememberTvFocus()
-    val focused = focus.focused
+private fun ContinueRow(
+    title: String,
+    items: List<WatchProgress>,
+    state: LazyListState,
+    nodes: MutableMap<String, FocusRequester>,
+    imageFor: (WatchProgress) -> String,
+    onTap: (WatchProgress) -> Unit,
+    onLongPress: (WatchProgress) -> Unit,
+    onMoveTo: (Int, Int) -> Unit,
+    rowIndex: Int,
+    isLastRow: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = title,
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.W700,
+            modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 4.dp),
+        )
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            val cardWidth = maxHeight * 0.66f
+            LazyRow(
+                state = state,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                itemsIndexed(items, key = { _, item -> item.id }) { index, progress ->
+                    val focus = rememberTvFocus()
+                    val node = nodes.getOrPut(progress.id) { FocusRequester() }
+                    Box(
+                        modifier = Modifier
+                            .width(cardWidth)
+                            .fillMaxHeight()
+                            .focusRequester(node)
+                            .focusable(interactionSource = focus.interaction)
+                            .tvPress(
+                                onTap = { onTap(progress) },
+                                onLongPress = { onLongPress(progress) },
+                            )
+                            .onPreviewKeyEvent { event ->
+                                if (!event.isKeyDown()) return@onPreviewKeyEvent false
+                                when (event.key) {
+                                    Key.DirectionLeft -> if (index > 0) {
+                                        onMoveTo(rowIndex, index - 1); true
+                                    } else {
+                                        false
+                                    }
+                                    Key.DirectionRight -> if (index < items.lastIndex) {
+                                        onMoveTo(rowIndex, index + 1); true
+                                    } else {
+                                        false
+                                    }
+                                    Key.DirectionUp -> if (rowIndex > 0) {
+                                        onMoveTo(rowIndex - 1, index); true
+                                    } else {
+                                        false
+                                    }
+                                    Key.DirectionDown -> if (!isLastRow) {
+                                        onMoveTo(rowIndex + 1, index); true
+                                    } else {
+                                        false
+                                    }
+                                    else -> false
+                                }
+                            },
+                    ) {
+                        ContinueWatchingCard(
+                            progress = progress,
+                            imageUrl = imageFor(progress),
+                            focused = focus.focused,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContinueWatchingCard(
+    progress: WatchProgress,
+    imageUrl: String,
+    focused: Boolean,
+) {
     val done = progress.fraction >= .95
     Card(
         colors = CardDefaults.cardColors(containerColor = AppColors.panel),
@@ -188,7 +349,6 @@ private fun ContinueWatchingCard(progress: WatchProgress, imageUrl: String) {
         shape = TvFocusShape,
         modifier = Modifier
             .fillMaxSize()
-            .focusable(interactionSource = focus.interaction)
             .tvFocusScale(focused),
     ) {
         Column(
@@ -196,7 +356,9 @@ private fun ContinueWatchingCard(progress: WatchProgress, imageUrl: String) {
                 .fillMaxSize()
                 .padding(10.dp),
         ) {
-            Box(modifier = Modifier.fillMaxWidth().aspectRatio(0.68f)) {
+            // El póster ocupa lo que dejan los textos: en el carrusel manda la
+            // altura de la fila, así que el recorte es preferible a desbordar.
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 RemoteImage(
                     url = imageUrl,
                     contentScale = ContentScale.Crop,

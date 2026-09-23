@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -134,6 +135,19 @@ fun Modifier.tvFocusItem(
  * (listas perezosas, ramas condicionales). En TV eso es frecuente; se ignora el intento.
  */
 fun FocusRequester.tryRequestFocus() = runCatching { requestFocus() }
+
+/**
+ * Reintenta el foco cuadro a cuadro: en listas perezosas el nodo puede no estar
+ * compuesto todavía en el primer intento (cambiar de categoría o de temporada
+ * deja la fila fuera del viewport). Devuelve false si nunca llegó.
+ */
+suspend fun FocusRequester.requestFocusReady(maxAttempts: Int = 8): Boolean {
+    repeat(maxAttempts) {
+        withFrameNanos { }
+        if (tryRequestFocus().isSuccess) return true
+    }
+    return false
+}
 
 /**
  * Utilidades de mando a distancia (paridad con los `onKeyEvent` de Flutter).
@@ -251,24 +265,18 @@ fun Modifier.tvPress(
         }
     }
     return this
-        .then(
-            if (onLongPress != null) {
-                Modifier.pointerInput(onTap, onLongPress) {
-                    detectTapGestures(
-                        onLongPress = {
-                            // Mark it as handled as well as invoking the
-                            // action, so a following release cannot become a
-                            // short press if the item recomposes.
-                            longFired = true
-                            onLongPress()
-                        },
-                        onTap = { onTap() },
-                    )
-                }
-            } else {
-                Modifier
-            },
-        )
+        .pointerInput(onTap, onLongPress) {
+            detectTapGestures(
+                onLongPress = {
+                    // Mark it as handled as well as invoking the
+                    // action, so a following release cannot become a
+                    // short press if the item recomposes.
+                    longFired = true
+                    onLongPress?.invoke()
+                },
+                onTap = { onTap() },
+            )
+        }
         .onPreviewKeyEvent { event ->
             if (!enabled || !TvKeys.isSelectKey(event.key)) return@onPreviewKeyEvent false
             if (android.os.SystemClock.uptimeMillis() < ignoreUntil) {

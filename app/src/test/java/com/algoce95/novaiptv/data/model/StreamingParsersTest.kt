@@ -7,6 +7,7 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.StringReader
 import java.io.StringWriter
+import com.google.gson.Strictness
 import com.google.gson.stream.JsonReader
 
 class StreamingParsersTest {
@@ -104,7 +105,7 @@ class StreamingParsersTest {
     @Test
     fun `nextString tolera tokens numéricos`() {
         val reader = JsonReader(StringReader("[1478,4.5]"))
-        reader.isLenient = true
+        reader.strictness = Strictness.LENIENT
         reader.beginArray()
         assertEquals("1478", reader.nextString())
         assertEquals("4.5", reader.nextString())

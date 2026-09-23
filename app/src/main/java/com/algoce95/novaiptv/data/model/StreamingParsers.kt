@@ -1,5 +1,6 @@
 package com.algoce95.novaiptv.data.model
 
+import com.google.gson.Strictness
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
 import com.google.gson.stream.JsonWriter
@@ -22,7 +23,7 @@ object StreamingParsers {
     /** Array o objeto Xtream → modelos, sin materializar el cuerpo entero. */
     fun <T> parseTopList(stream: InputStream, parse: (JSONObject) -> T): List<T> {
         InputStreamReader(stream, Charsets.UTF_8).use { reader ->
-            val json = JsonReader(reader).apply { isLenient = true }
+            val json = JsonReader(reader).apply { strictness = Strictness.LENIENT }
             // Cuerpo vacío: lista vacía (no es error). Un corte a mitad de
             // documento lanza EOFException y SÍ es error (respuesta truncada).
             val first = try {
@@ -163,7 +164,7 @@ object StreamingParsers {
     }
 
     private fun readSeriesInfoInto(reader: InputStreamReader, out: JSONObject) {
-        val json = JsonReader(reader).apply { isLenient = true }
+        val json = JsonReader(reader).apply { strictness = Strictness.LENIENT }
         if (json.peek() != JsonToken.BEGIN_OBJECT) return
         json.beginObject()
         while (json.hasNext()) {

@@ -26,7 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
@@ -88,6 +88,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.algoce95.novaiptv.core.di.AppContainer
+import com.algoce95.novaiptv.core.playback.LivePreview
+import com.algoce95.novaiptv.core.playback.bindSharedSurface
 import com.algoce95.novaiptv.core.theme.AppColors
 import com.algoce95.novaiptv.core.utils.UrlNormalizer
 import com.algoce95.novaiptv.data.model.WatchProgress
@@ -127,14 +129,25 @@ fun PlayerScreen(onClose: () -> Unit) {
     val activity = context as Activity
     val scope = rememberCoroutineScope()
 
+    // Directo ya sonando en la preview: se reutiliza ese reproductor para que
+    // ampliar a pantalla completa no reinicie la reproducción (LivePreview).
     val exo = remember(session) {
-        val http = DefaultHttpDataSource.Factory()
-            .setUserAgent("IPTV-Flutter/1.0")
-            .setAllowCrossProtocolRedirects(true)
-        ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(http))
-            .build()
+        val preview = if (session.isLive) {
+            LivePreview.claim(session.items.getOrNull(session.index)?.streamUrl)
+        } else {
+            null
+        }
+        preview ?: run {
+            val http = DefaultHttpDataSource.Factory()
+                .setUserAgent("IPTV-Flutter/1.0")
+                .setAllowCrossProtocolRedirects(true)
+            ExoPlayer.Builder(context)
+                .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(http))
+                .build()
+        }
     }
+    val fromPreview = LivePreview.holds(exo)
+    var skipInitialLoad by remember(session) { mutableStateOf(fromPreview) }
 
     var queueIndex by remember(session) {
         mutableIntStateOf(session.index.coerceIn(0, (session.items.size - 1).coerceAtLeast(0)))
@@ -424,8 +437,14 @@ fun PlayerScreen(onClose: () -> Unit) {
                     }
                 }
             }
-            exo.pause()
-            exo.release()
+            if (fromPreview) {
+                // Era el reproductor de la preview: se devuelve al navegador,
+                // que lo reanuda por el canal en el que se haya quedado.
+                LivePreview.handBack(session.items.getOrNull(queueIndex)?.channelId)
+            } else {
+                exo.pause()
+                exo.release()
+            }
         }
     }
 
@@ -434,6 +453,13 @@ fun PlayerScreen(onClose: () -> Unit) {
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
                 if (playing) {
+                    // Aviso de "ya se está viendo": bajo demanda y con imagen
+                    // real en pantalla, no al pulsar el botón.
+                    if (!treatAsLive) {
+                        session.items.getOrNull(queueIndex)?.let { item ->
+                            session.onPlaybackStarted?.invoke(item)
+                        }
+                    }
                     scheduleHide()
                 } else {
                     hideJob?.cancel()
@@ -476,6 +502,18 @@ fun PlayerScreen(onClose: () -> Unit) {
         if (item == null) {
             hasError = true
             errorMessage = "No se pudo reproducir el contenido."
+            return@LaunchedEffect
+        }
+        if (skipInitialLoad && queueIndex == session.index) {
+            // El preview ya trae este canal cargando: solo se toma el control.
+            skipInitialLoad = false
+            lastUrl = item.streamUrl
+            initialized = true
+            treatAsLive = true
+            isPlaying = exo.isPlaying
+            showControls = true
+            playFocus.tryRequestFocus()
+            scheduleHide()
             return@LaunchedEffect
         }
         val myAttempt = ++attempt
@@ -707,9 +745,12 @@ fun PlayerScreen(onClose: () -> Unit) {
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
-                    player = exo
+                    // Reutilizado de la preview: hay que religar la superficie
+                    // cuando la vista del navegador se haya ido.
+                    if (fromPreview) bindSharedSurface(exo) else player = exo
                 }
             },
+            onRelease = { view -> view.player = null },
             update = { view ->
                 view.player = exo
                 view.resizeMode = when (fitMode) {
@@ -972,7 +1013,7 @@ private fun PlayerControls(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TvCircleButton(
-                icon = Icons.Filled.ArrowBack,
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Volver",
                 onClick = onBack,
             )
@@ -1298,7 +1339,7 @@ private fun PlayerErrorView(
             Spacer(Modifier.height(28.dp))
             Row {
                 TvChipButton(label = "Reintentar", icon = Icons.Filled.Refresh, onClick = onRetry)
-                TvChipButton(label = "Volver", icon = Icons.Filled.ArrowBack, onClick = onBack)
+                TvChipButton(label = "Volver", icon = Icons.AutoMirrored.Filled.ArrowBack, onClick = onBack)
             }
         }
     }

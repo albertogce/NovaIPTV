@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -42,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -77,9 +79,12 @@ import com.algoce95.novaiptv.data.model.Parsers
 import com.algoce95.novaiptv.data.model.Series
 import com.algoce95.novaiptv.presentation.tv.TvFocusShape
 import com.algoce95.novaiptv.presentation.tv.isKeyDown
+import com.algoce95.novaiptv.presentation.tv.requestFocusReady
 import com.algoce95.novaiptv.presentation.tv.rememberTvFocus
 import com.algoce95.novaiptv.presentation.tv.tvFocusScale
 import com.algoce95.novaiptv.presentation.tv.tvPress
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -95,11 +100,18 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
     // Con la temporada ya elegida o el foco en los episodios, la cabecera
     // pasa a modo compacto para dar altura útil a los capítulos.
     var headerCompact by remember(series.seriesId) { mutableStateOf(false) }
+    // El episodio visto se busca una sola vez: repetir la búsqueda cada vez
+    // que la rejilla se recomponía devolvía el foco al capítulo ya visto.
+    var pendingTargetFocus by remember(series.seriesId) { mutableStateOf(false) }
 
     val seasonFocus = remember { FocusRequester() }
     val firstEpisodeFocus = remember { FocusRequester() }
     val targetEpisodeFocus = remember { FocusRequester() }
+    val episodeFocuses = remember { mutableStateMapOf<Int, FocusRequester>() }
     val scope = rememberCoroutineScope()
+
+    fun episodeFocus(index: Int): FocusRequester =
+        episodeFocuses.getOrPut(index) { FocusRequester() }
 
     fun targetEpisodeId(): String? =
         sessionEpisodeId ?: initialEpisodeId ?: lastEpisodeId?.toString()
@@ -115,9 +127,6 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
         return map
     }
 
-    fun sortedSeasons(): List<String> =
-        Parsers.sortSeasonKeys(episodesMap(seriesData).keys.toList())
-
     fun seasonForEpisode(episodes: Map<String, List<JSONObject>>, episodeId: String): String? {
         for ((season, list) in episodes) {
             for (item in list) {
@@ -128,20 +137,19 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
         return null
     }
 
-    fun currentEpisodes(): List<JSONObject> {
-        val season = selectedSeason ?: return emptyList()
-        val raw = episodesMap(seriesData)[season] ?: return emptyList()
-        return raw
+    // Listas memoizadas: una instancia nueva en cada recomposición reinicia los
+    // efectos de scroll y la rejilla salta de vuelta al episodio visto, lo que
+    // impedía enfocar o pulsar el resto de capítulos.
+    val episodesBySeason = remember(seriesData) { episodesMap(seriesData) }
+    val seasonKeys = remember(episodesBySeason) {
+        Parsers.sortSeasonKeys(episodesBySeason.keys.toList())
+    }
+    val allEpisodes = remember(episodesBySeason, seasonKeys) {
+        seasonKeys.flatMap { episodesBySeason[it] ?: emptyList() }
     }
 
-    fun allEpisodes(): List<JSONObject> {
-        val map = episodesMap(seriesData)
-        val result = mutableListOf<JSONObject>()
-        for (season in sortedSeasons()) {
-            result.addAll(map[season] ?: emptyList())
-        }
-        return result
-    }
+    fun episodeIdOf(ep: JSONObject): String =
+        (ep.opt("id")?.toString() ?: ep.opt("stream_id")).toString()
 
     fun episodeTitle(ep: JSONObject): String {
         val raw = ep.opt("title")?.toString() ?: ep.opt("name")?.toString().orEmpty()
@@ -152,7 +160,7 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
     }
 
     fun episodeStreamUrl(ep: JSONObject): String {
-        val id = ep.opt("id")?.toString() ?: ep.opt("stream_id").toString()
+        val id = ep.opt("id")?.toString() ?: ep.opt("stream_id")?.toString().orEmpty()
         val ext = ep.opt("container_extension")?.toString() ?: "mp4"
         return requireNotNull(AppContainer.api).episodeStreamUrl(
             id.toIntOrNull() ?: 0,
@@ -160,24 +168,28 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
         )
     }
 
+    // El reproductor llama a esto cuando el capítulo ya suena, con esta
+    // composición fuera de pila: el `scope` del composable está cancelado, así
+    // que la escritura va en su propio hilo.
     fun saveLastWatched(epId: Int, title: String) {
-        scope.launch {
+        CoroutineScope(Dispatchers.IO).launch {
             AppContainer.prefs.setString("last_episode_${series.seriesId}", "$epId|$title")
-            lastEpisodeId = epId
-            lastEpisodeTitle = title
-            sessionEpisodeId = epId.toString()
+            AppContainer.prefs.pushHistory("series:${series.seriesId}")
         }
+        lastEpisodeId = epId
+        lastEpisodeTitle = title
+        sessionEpisodeId = epId.toString()
     }
 
     fun playEpisode(ep: JSONObject) {
         val epId = ep.opt("id")?.toString() ?: ep.opt("stream_id")?.toString()
-        val parsedId = epId?.toIntOrNull() ?: return
+        if (epId?.toIntOrNull() == null) return
         val epTitle = episodeTitle(ep)
-        val playable = allEpisodes().filter {
+        val playable = allEpisodes.filter {
             (it.opt("id")?.toString() ?: it.opt("stream_id")?.toString())?.toIntOrNull() != null
         }
         val queue = playable.map {
-            val itemId = it.opt("id")?.toString() ?: it.opt("stream_id").toString()
+            val itemId = it.opt("id")?.toString() ?: it.opt("stream_id")?.toString().orEmpty()
             QueueItem(
                 streamUrl = episodeStreamUrl(it),
                 title = "${series.title} - ${episodeTitle(it)}",
@@ -187,29 +199,34 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
         val streamUrl = episodeStreamUrl(ep)
         var queueIndex = queue.indexOfFirst { it.streamUrl == streamUrl }
         if (queueIndex < 0) queueIndex = 0
-        scope.launch {
-            AppContainer.prefs.pushHistory("series:${series.seriesId}")
-            saveLastWatched(parsedId, epTitle.toString())
-            AppContainer.playerSession = PlayerSession(
-                items = queue,
-                index = queueIndex,
-                title = "${series.title} - $epTitle",
-                progressId = "series:${series.seriesId}",
-                isLive = false,
-                poster = series.logo,
-                onQueueIndexChanged = { index ->
-                    if (index in playable.indices) {
-                        val changed = playable[index]
-                        val changedId = (changed.opt("id")?.toString()
-                            ?: changed.opt("stream_id")?.toString())?.toIntOrNull()
-                        if (changedId != null) {
-                            saveLastWatched(changedId, episodeTitle(changed).toString())
-                        }
+        AppContainer.playerSession = PlayerSession(
+            items = queue,
+            index = queueIndex,
+            title = "${series.title} - $epTitle",
+            progressId = "series:${series.seriesId}",
+            isLive = false,
+            poster = series.logo,
+            // Historial y "último visto" solo cuando el capítulo suena de
+            // verdad: con un fallo de códec el episodio no debe quedar marcado.
+            onPlaybackStarted = { item ->
+                val started = playable.firstOrNull { episodeIdOf(it) == item.episodeId }
+                val startedId = started?.let { episodeIdOf(it).toIntOrNull() }
+                if (started != null && startedId != null) {
+                    saveLastWatched(startedId, episodeTitle(started))
+                }
+            },
+            onQueueIndexChanged = { index ->
+                if (index in playable.indices) {
+                    val changed = playable[index]
+                    val changedId = (changed.opt("id")?.toString()
+                        ?: changed.opt("stream_id")?.toString())?.toIntOrNull()
+                    if (changedId != null) {
+                        saveLastWatched(changedId, episodeTitle(changed))
                     }
-                },
-            )
-            onPlay()
-        }
+                }
+            },
+        )
+        onPlay()
     }
 
     LaunchedEffect(series.seriesId) {
@@ -242,11 +259,10 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
             }
             selectedSeason = selected
             isLoading = false
-            if (initialEpisodeId != null && target != null && selected != null &&
-                seasonForEpisode(episodes, target) != null
-            ) {
-                targetEpisodeFocus.requestFocus()
-            }
+            // El foco debe entrar en la rejilla de episodios: si no se pide
+            // aquí, se lo queda la fila de temporadas y la navegación parece
+            // bloqueada (el chip consume arriba/abajo sin a dónde ir).
+            if (selected != null) pendingTargetFocus = true
         } catch (_: Exception) {
             isLoading = false
         }
@@ -255,11 +271,26 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
     val info = seriesData?.optJSONObject("info")
     val rawPlot = info?.opt("plot")?.toString() ?: info?.opt("description")?.toString()
     val plot = if (!rawPlot.isNullOrBlank()) rawPlot else "Sin descripción disponible"
-    val seasons = sortedSeasons()
-    val episodes = currentEpisodes()
+    val seasons = seasonKeys
+    val episodes = remember(episodesBySeason, selectedSeason) {
+        episodesBySeason[selectedSeason] ?: emptyList()
+    }
     val target = targetEpisodeId()
     val episodeColumns = if (LocalConfiguration.current.screenWidthDp >= 900) 2 else 1
     val gridState = rememberLazyGridState()
+    val seasonRowState = rememberLazyListState()
+
+    // Cambiar de temporada deja la rejilla donde estaba: hay que volver arriba
+    // antes de pedir el foco, o el nodo del primer episodio no está compuesto.
+    suspend fun focusFirstEpisode() {
+        gridState.scrollToItem(0)
+        firstEpisodeFocus.requestFocusReady()
+    }
+
+    suspend fun focusSeasonRow() {
+        seasonRowState.scrollToItem(0)
+        seasonFocus.requestFocusReady()
+    }
 
     Surface(modifier = Modifier.fillMaxSize(), color = AppColors.ink) {
         if (isLoading) {
@@ -276,6 +307,7 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
                 )
                 if (seasons.isNotEmpty()) {
                     LazyRow(
+                        state = seasonRowState,
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(AppColors.panel)
@@ -290,7 +322,7 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
                                 onClick = {
                                     selectedSeason = season
                                     headerCompact = true
-                                    scope.launch { firstEpisodeFocus.requestFocus() }
+                                    scope.launch { focusFirstEpisode() }
                                 },
                                 label = { Text("T$season") },
                                 colors = FilterChipDefaults.filterChipColors(
@@ -312,12 +344,12 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
                                             Key.Enter, Key.NumPadEnter, Key.Spacebar -> {
                                                 selectedSeason = season
                                                 headerCompact = true
-                                                scope.launch { firstEpisodeFocus.requestFocus() }
+                                                scope.launch { focusFirstEpisode() }
                                                 true
                                             }
                                             Key.DirectionDown -> {
                                                 headerCompact = true
-                                                scope.launch { firstEpisodeFocus.requestFocus() }
+                                                scope.launch { focusFirstEpisode() }
                                                 true
                                             }
                                             else -> false
@@ -345,37 +377,61 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            items(episodes.size) { index ->
+                            items(episodes.size, key = { "ep-$selectedSeason-$it" }) { index ->
                                 val ep = episodes[index]
-                                val epId = (ep.opt("id")?.toString()
-                                    ?: ep.opt("stream_id")).toString()
-                                val isTarget = target != null && epId == target
+                                val isTarget = target != null && episodeIdOf(ep) == target
                                 EpisodeCard(
                                     episode = ep,
                                     episodeTitle = episodeTitle(ep),
                                     isLastWatched = isTarget,
-                                    focusNode = when {
-                                        isTarget -> targetEpisodeFocus
-                                        index == 0 -> firstEpisodeFocus
-                                        else -> null
+                                    // El primero y el visto suelen coincidir: si
+                                    // no se adjuntan los dos, el chip de
+                                    // temporada se queda sin destino de foco.
+                                    focusNodes = buildList {
+                                        add(episodeFocus(index))
+                                        if (isTarget) add(targetEpisodeFocus)
+                                        if (index == 0) add(firstEpisodeFocus)
                                     },
-                                    onArrowUp = if (index == 0) {
-                                        { seasonFocus.requestFocus() }
+                                    // La escala de foco agranda el ítem y sus
+                                    // límites solapan al vecino, así que la
+                                    // búsqueda lateral de Compose la descarta:
+                                    // el movimiento izquierda/derecha se mueve
+                                    // a mano.
+                                    onArrowLeft = if (index % episodeColumns != 0) {
+                                        { scope.launch { episodeFocus(index - 1).requestFocusReady() } }
                                     } else {
                                         null
                                     },
-                                    onGainFocus = { headerCompact = true },
+                                    onArrowRight =
+                                    if (index % episodeColumns != episodeColumns - 1 &&
+                                        index + 1 < episodes.size
+                                    ) {
+                                        { scope.launch { episodeFocus(index + 1).requestFocusReady() } }
+                                    } else {
+                                        null
+                                    },
+                                    onArrowUp = if (index < episodeColumns) {
+                                        { scope.launch { focusSeasonRow() } }
+                                    } else {
+                                        null
+                                    },
                                     onPlay = { playEpisode(ep) },
                                 )
                             }
                         }
-                        if (initialEpisodeId != null && target != null) {
-                            LaunchedEffect(episodes) {
-                                val index = episodes.indexOfFirst {
-                                    ((it.opt("id")?.toString() ?: it.opt("stream_id")).toString()) == target
-                                }
-                                if (index >= 0) gridState.animateScrollToItem(index)
+                        // Una sola pasada: desplazar hasta el visto en cada
+                        // recomposición devolvía el foco y bloqueaba el resto.
+                        LaunchedEffect(pendingTargetFocus, episodes) {
+                            if (!pendingTargetFocus || episodes.isEmpty()) return@LaunchedEffect
+                            val index = episodes.indexOfFirst { episodeIdOf(it) == target }
+                            headerCompact = true
+                            gridState.scrollToItem(if (index >= 0) index else 0)
+                            if (index >= 0) {
+                                targetEpisodeFocus.requestFocusReady(maxAttempts = 12)
+                            } else {
+                                firstEpisodeFocus.requestFocusReady(maxAttempts = 12)
                             }
+                            pendingTargetFocus = false
                         }
                     }
                 }
@@ -500,16 +556,14 @@ private fun EpisodeCard(
     episode: JSONObject,
     episodeTitle: String,
     isLastWatched: Boolean,
-    focusNode: FocusRequester?,
+    focusNodes: List<FocusRequester>,
+    onArrowLeft: (() -> Unit)?,
+    onArrowRight: (() -> Unit)?,
     onArrowUp: (() -> Unit)?,
-    onGainFocus: () -> Unit = {},
     onPlay: () -> Unit,
 ) {
     val focus = rememberTvFocus()
     val focused = focus.focused
-    LaunchedEffect(focused) {
-        if (focused) onGainFocus()
-    }
     val info = episode.optJSONObject("info")
     val epNum = (episode.opt("episode_num")?.toString()
         ?: episode.opt("episode_number")?.toString()).orEmpty()
@@ -534,15 +588,18 @@ private fun EpisodeCard(
                 },
                 shape = TvFocusShape,
             )
-            .then(if (focusNode != null) Modifier.focusRequester(focusNode) else Modifier)
+            .then(focusNodes.fold<FocusRequester, Modifier>(Modifier) { m, node ->
+                m.focusRequester(node)
+            })
             .focusable(interactionSource = focus.interaction)
             .tvPress(onTap = onPlay)
             .onPreviewKeyEvent { event ->
-                if (event.isKeyDown() && event.key == Key.DirectionUp && onArrowUp != null) {
-                    onArrowUp()
-                    true
-                } else {
-                    false
+                if (!event.isKeyDown()) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.DirectionLeft -> onArrowLeft?.let { it(); true } ?: false
+                    Key.DirectionRight -> onArrowRight?.let { it(); true } ?: false
+                    Key.DirectionUp -> onArrowUp?.let { it(); true } ?: false
+                    else -> false
                 }
             }
             .tvFocusScale(focused),

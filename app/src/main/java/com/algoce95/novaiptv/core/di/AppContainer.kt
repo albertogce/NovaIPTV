@@ -18,6 +18,8 @@ data class QueueItem(
     val streamUrl: String,
     val title: String,
     val episodeId: String? = null,
+    /** Id de canal en directo: permite devolver la selección al preview. */
+    val channelId: Int? = null,
 )
 
 data class PlayerSession(
@@ -28,6 +30,11 @@ data class PlayerSession(
     val isLive: Boolean,
     val poster: String? = null,
     val onQueueIndexChanged: ((Int) -> Unit)? = null,
+    /**
+     * Solo cuando el ítem suena de verdad: historial y "último visto" no deben
+     * escribirse al pulsar, o un capítulo ilegible queda marcado como visto.
+     */
+    val onPlaybackStarted: ((QueueItem) -> Unit)? = null,
 )
 
 data class SearchSnapshot(

@@ -25,7 +25,7 @@ object Parsers {
     /** Primera clave presente (aunque valga "") convertida a String. */
     private fun firstString(obj: JSONObject, vararg keys: String): String {
         for (key in keys) {
-            if (!obj.isNull(key)) return obj.opt(key).toString()
+            if (!obj.isNull(key)) return obj.opt(key)?.toString() ?: ""
         }
         return ""
     }

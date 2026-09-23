@@ -1,6 +1,7 @@
 package com.algoce95.novaiptv.presentation.home
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,6 +33,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.LiveTv
@@ -41,7 +43,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.outlined.Label
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -103,6 +104,7 @@ import com.algoce95.novaiptv.presentation.tv.ShimmerBox
 import com.algoce95.novaiptv.presentation.tv.TvFocusShape
 import com.algoce95.novaiptv.presentation.tv.TvKeys
 import com.algoce95.novaiptv.presentation.tv.isKeyDown
+import com.algoce95.novaiptv.presentation.tv.requestFocusReady
 import com.algoce95.novaiptv.presentation.tv.rememberTvFocus
 import com.algoce95.novaiptv.presentation.tv.tvFocusItem
 import com.algoce95.novaiptv.presentation.tv.tvFocusScale
@@ -119,13 +121,12 @@ import androidx.compose.runtime.mutableLongStateOf
 import java.util.Calendar
 import java.util.Locale
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.algoce95.novaiptv.core.di.AppContainer
+import com.algoce95.novaiptv.core.playback.LivePreview
+import com.algoce95.novaiptv.core.playback.bindSharedSurface
 
 /** Columnas según ancho con el ajuste de densidad (paridad con GridViewContentView). */
 fun gridColumns(density: Int, widthDp: Int): Int {
@@ -188,17 +189,16 @@ fun <C, T> CategoryContentView(
         target?.let { id ->
             sidebarScope.launch {
                 val index = categories.indexOfFirst { getCatId(it) == id }
-                if (index >= 0) sidebarState.animateScrollToItem(index)
-                withFrameNanos { }
-                sidebarNodes.getOrPut(id) { FocusRequester() }.requestFocus()
+                if (index >= 0) sidebarState.scrollToItem(index)
+                sidebarNodes.getOrPut(id) { FocusRequester() }.requestFocusReady()
             }
         }
     }
 
     fun focusFirstItem() {
         val first = items.firstOrNull() ?: return
-        focusRequesters?.getOrPut(itemKey(first)) { FocusRequester() }?.requestFocus()
-            ?: firstItemFocus.requestFocus()
+        val node = focusRequesters?.getOrPut(itemKey(first)) { FocusRequester() } ?: firstItemFocus
+        sidebarScope.launch { node.requestFocusReady() }
     }
 
     Column(
@@ -414,7 +414,7 @@ private fun <C> CategorySidebar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    Icons.Outlined.Label,
+                    Icons.AutoMirrored.Outlined.Label,
                     contentDescription = null,
                     tint = when {
                         hasFocus -> AppColors.mint
@@ -466,6 +466,17 @@ fun <T> GridContentView(
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
     val autoFocus = remember { FocusRequester() }
+    // Un nodo por posición: la escala de foco agranda los límites del ítem y
+    // Compose descarta al vecino en la búsqueda lateral, así que izquierda y
+    // derecha se mueven a mano (como en la rejilla de episodios).
+    val localNodes = remember { mutableStateMapOf<Any, FocusRequester>() }
+
+    fun focusNeighbor(from: Int, to: Int) {
+        val target = items.getOrNull(to) ?: return
+        scope.launch {
+            localNodes.getOrPut(itemKey(target)) { FocusRequester() }.requestFocusReady()
+        }
+    }
 
     // En favoritos cada tarjeta usa su propio FocusRequester. No se puede
     // pedir el autofocus genérico porque no está asociado a ningún Card en
@@ -476,12 +487,12 @@ fun <T> GridContentView(
         // arrastraría el foco a la primera tarjeta: se omite el autofocus.
         if (skipAutoFocus()) return@LaunchedEffect
         if (focusRequesters != null) {
-            focusRequesters[itemKey(items.first())]?.requestFocus()
+            focusRequesters[itemKey(items.first())]?.requestFocusReady()
         } else {
             // Con focusRequesters nulo la primera tarjeta se adjunta a
             // firstItemFocus (o a autoFocus); pedir el autoFocus a secas
             // apuntaba a un nodo inexistente y el foco caía en el buscador.
-            (firstItemFocus ?: autoFocus).requestFocus()
+            (firstItemFocus ?: autoFocus).requestFocusReady()
         }
     }
 
@@ -490,8 +501,8 @@ fun <T> GridContentView(
         if (key != null && focusRequesters != null) {
             val index = items.indexOfFirst { itemKey(it) == key }
             if (index >= 0) {
-                gridState.animateScrollToItem((index / columns.coerceAtLeast(1)) * columns.coerceAtLeast(1))
-                focusRequesters[key]?.requestFocus()
+                gridState.scrollToItem((index / columns.coerceAtLeast(1)) * columns.coerceAtLeast(1))
+                focusRequesters[key]?.requestFocusReady()
             }
         }
     }
@@ -547,6 +558,7 @@ fun <T> GridContentView(
                     // primer item, o el autofocus local como último recurso.
                     val node = focusRequesters?.getOrPut(itemKey(item)) { FocusRequester() }
                         ?: if (isFirstItem) firstItemFocus ?: autoFocus else null
+                    val localNode = localNodes.getOrPut(itemKey(item)) { FocusRequester() }
                     // Tarjeta de rejilla con el patrón TV unificado: relleno
                     // panel + borde de acento + escala animada. Sustituye al
                     // Card de Material (su relleno sólido de acento competía
@@ -557,6 +569,7 @@ fun <T> GridContentView(
                             .clip(TvFocusShape)
                             .background(AppColors.panel)
                             .then(if (node != null) Modifier.focusRequester(node) else Modifier)
+                            .focusRequester(localNode)
                             .focusable(interactionSource = focus.interaction)
                             .border(1.dp, Color.White.copy(alpha = 0.08f), TvFocusShape)
                             .border(
@@ -592,7 +605,8 @@ fun <T> GridContentView(
                                             onAtLeftEdge?.invoke()
                                             onAtLeftEdge != null
                                         } else {
-                                            false
+                                            focusNeighbor(index, index - 1)
+                                            true
                                         }
                                     }
                                     Key.DirectionRight -> {
@@ -600,7 +614,8 @@ fun <T> GridContentView(
                                             onAtRightEdge?.invoke()
                                             onAtRightEdge != null
                                         } else {
-                                            false
+                                            focusNeighbor(index, index + 1)
+                                            true
                                         }
                                     }
                                     Key.DirectionDown -> isBottomEdge
@@ -664,45 +679,64 @@ fun LiveChannelBrowser(
     onMoveItem: (Int, Int) -> Unit,
     favoriteChannels: List<LiveChannel>,
 ) {
-    var selected by remember { mutableStateOf<LiveChannel?>(null) }
     val channelFocuses = remember { mutableStateMapOf<Int, FocusRequester>() }
     val categoryFocus = remember { mutableStateMapOf<String, FocusRequester>() }
     var sidebarFocusedId by remember { mutableStateOf<String?>(null) }
     val focusScope = rememberCoroutineScope()
+    // Estados hoisteados: antes de pedir el foco hay que asegurar que el nodo
+    // está compuesto, y en una lista perezosa eso exige poder desplazarla.
+    val channelListState = rememberLazyListState()
+    val sidebarListState = rememberLazyListState()
 
     val context = LocalContext.current
-    val exo = remember {
-        val http = DefaultHttpDataSource.Factory()
-            .setUserAgent("IPTV-Flutter/1.0")
-            .setAllowCrossProtocolRedirects(true)
-        ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(http))
-            .build()
+    // El id previsualizado sobrevive a la navegación: al abrir la pantalla
+    // completa se toma el reproductor de LivePreview y al volver se reanuda.
+    var previewedId by remember { mutableStateOf(LivePreview.channelId) }
+    val selected = remember(previewedId, items) {
+        items.firstOrNull { it.channelId == previewedId }
+            ?: LivePreview.channel?.takeIf { it.channelId == previewedId }
     }
-    DisposableEffect(Unit) { onDispose { exo.release() } }
-    LaunchedEffect(selected?.channelId) {
+    val exo = remember { LivePreview.player(context) }
+
+    // Una sola conexión: el preview también debe cortar la red en segundo plano.
+    DisposableEffect(Unit) {
+        val onBackground = { LivePreview.onBackground() }
+        val onForeground = { LivePreview.onForeground() }
+        AppContainer.onAppBackgrounded = onBackground
+        AppContainer.onAppForegrounded = onForeground
+        onDispose {
+            if (AppContainer.onAppBackgrounded === onBackground) AppContainer.onAppBackgrounded = null
+            if (AppContainer.onAppForegrounded === onForeground) AppContainer.onAppForegrounded = null
+            // El reproductor no se libera si la pantalla completa se lo llevó.
+            LivePreview.releaseIfUnused(exo)
+        }
+    }
+
+    LaunchedEffect(previewedId, selected) {
         val ch = selected
-        if (ch == null) {
-            exo.stop()
-            exo.clearMediaItems()
-        } else {
-            exo.setMediaItem(MediaItem.fromUri(client.liveStreamUrl(ch.channelId))); exo.prepare(); exo.playWhenReady = true
+        when {
+            // Volviendo de la pantalla completa el catálogo aún puede estar
+            // cargando: el canal se resolverá cuando llegue la lista.
+            ch == null && previewedId != null && items.isEmpty() -> Unit
+            ch == null -> LivePreview.stop()
+            else -> LivePreview.play(context, ch, client.liveStreamUrl(ch.channelId))
         }
     }
 
     val requestChannelFocus: () -> Unit = {
         sidebarFocusedId = null
         focusScope.launch {
-            withFrameNanos { }
-            val firstChannel = items.firstOrNull()
-            if (firstChannel != null) {
-                channelFocuses.getOrPut(firstChannel.channelId) { FocusRequester() }.requestFocus()
-            }
+            val firstChannel = items.firstOrNull() ?: return@launch
+            channelListState.scrollToItem(0)
+            channelFocuses.getOrPut(firstChannel.channelId) { FocusRequester() }
+                .requestFocusReady()
         }
     }
 
     LaunchedEffect(selectedCategoryId) {
-        selected = null
+        // Volviendo de la pantalla completa se conserva el canal previsualizado.
+        if (LivePreview.consumeRestore()) return@LaunchedEffect
+        previewedId = null
         if (items.isNotEmpty() && sidebarFocusedId == null) {
             requestChannelFocus()
         }
@@ -713,8 +747,9 @@ fun LiveChannelBrowser(
         if (targetId != null) {
             sidebarFocusedId = targetId
             focusScope.launch {
-                withFrameNanos { }
-                categoryFocus.getOrPut(targetId) { FocusRequester() }.requestFocus()
+                val index = categories.indexOfFirst { it.categoryId == targetId }
+                if (index >= 0) sidebarListState.scrollToItem(index)
+                categoryFocus.getOrPut(targetId) { FocusRequester() }.requestFocusReady()
             }
         }
     }
@@ -736,7 +771,7 @@ fun LiveChannelBrowser(
         }
         Row(Modifier.fillMaxSize()) {
         // Reutilizamos el estilo y navegación de la barra lateral existente.
-        CategorySidebar(categories, rememberLazyListState(), selectedCategoryId,
+        CategorySidebar(categories, sidebarListState, selectedCategoryId,
             { it.categoryId }, { it.categoryName },
             onSelectCategory = { id ->
                 // Al elegir categoría desde el sidebar, el foco debe pasar al
@@ -776,7 +811,7 @@ fun LiveChannelBrowser(
                 )
                 Text("${items.size} canales", color = subtleTextColor(), fontSize = 11.sp)
             }
-            LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LazyColumn(state = channelListState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             itemsIndexed(items, key = { _, it -> it.channelId }) { index, channel ->
                 val focus = rememberTvFocus()
                 val hasFocus = focus.focused
@@ -797,7 +832,16 @@ fun LiveChannelBrowser(
                         autofocus = index == 0,
                         ignoreInitialSelect = true,
                         fireOnDown = true,
-                        onTap = { if (active) onPlay(channel, items) else selected = channel },
+                        onTap = {
+                            if (active) {
+                                // Ampliar sin reiniciar: autoriza que la pantalla
+                                // completa use este mismo reproductor.
+                                LivePreview.armHandoff()
+                                onPlay(channel, items)
+                            } else {
+                                previewedId = channel.channelId
+                            }
+                        },
                         onLongPress = { onToggleFavorite(channel) }
                     )
                     .onPreviewKeyEvent { event ->
@@ -861,10 +905,11 @@ fun LiveChannelBrowser(
                         PlayerView(ctx).apply {
                             useController = false
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            player = exo
+                            bindSharedSurface(exo)
                         }
                     },
                     update = { view -> view.player = exo },
+                    onRelease = { view -> view.player = null },
                     modifier = Modifier.fillMaxSize()
                 )
                 if (sel == null) {
@@ -951,7 +996,7 @@ fun LiveChannelBrowser(
             } else {
                 LiveStartSuggestions(
                     favorites = favoriteChannels,
-                    onSelect = { selected = it },
+                    onSelect = { previewedId = it.channelId },
                 )
             }
         }

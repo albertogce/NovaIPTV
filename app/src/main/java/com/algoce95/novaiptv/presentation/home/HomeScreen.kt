@@ -277,6 +277,7 @@ fun HomeScreen(navController: NavController) {
             QueueItem(
                 streamUrl = vm.client().liveStreamUrl(it.channelId),
                 title = it.channelName,
+                channelId = it.channelId,
             )
         }
         var index = queue.indexOfFirst { it.channelId == channel.channelId }
