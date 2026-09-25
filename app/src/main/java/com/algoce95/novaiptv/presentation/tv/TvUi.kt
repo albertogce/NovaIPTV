@@ -258,6 +258,7 @@ fun Modifier.tvPress(
     var timerJob by remember { mutableStateOf<Job?>(null) }
     var longFired by remember { mutableStateOf(false) }
     var suppressNextTap by remember { mutableStateOf(false) }
+    var sawKeyDown by remember { mutableStateOf(false) }
     var ignoreUntil by remember { mutableLongStateOf(0L) }
     LaunchedEffect(autofocus, ignoreInitialSelect) {
         if (autofocus && ignoreInitialSelect) {
@@ -284,6 +285,7 @@ fun Modifier.tvPress(
             }
             when (event.type) {
                 KeyEventType.KeyDown -> {
+                    sawKeyDown = true
                     if (fireOnDown && onLongPress == null) {
                         onTap()
                         return@onPreviewKeyEvent true
@@ -302,9 +304,16 @@ fun Modifier.tvPress(
                     true
                 }
                 KeyEventType.KeyUp -> {
+                    val ownsPress = sawKeyDown
+                    sawKeyDown = false
                     timerJob?.cancel()
                     timerJob = null
                     if (fireOnDown && onLongPress == null) return@onPreviewKeyEvent true
+                    // Soltar la MISMA tecla que ya actuó en otro ítem: al cambiar
+                    // de pantalla el foco cae en un nodo recién compuesto que nunca
+                    // vio el pulsar, y sin esto esa suelta disparaba una segunda
+                    // acción (abrir "Seguir viendo" reproducía su primer elemento).
+                    if (!ownsPress) return@onPreviewKeyEvent true
                     // A long press already performed its action. In
                     // particular, do not open a channel on the release of
                     // the same held Enter key.
