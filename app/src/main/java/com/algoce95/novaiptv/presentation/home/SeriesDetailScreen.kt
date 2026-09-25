@@ -319,8 +319,10 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
                     ) {
                         items(seasons) { season ->
                             val selected = season == selectedSeason
+                            val chipFocus = rememberTvFocus()
                             FilterChip(
                                 selected = selected,
+                                interactionSource = chipFocus.interaction,
                                 onClick = {
                                     selectedSeason = season
                                     headerCompact = true
@@ -332,7 +334,7 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
                                     containerColor = AppColors.focusFill,
                                 ),
                                 modifier = Modifier
-                                    .tvFocusScale(selected, 1.04f)
+                                    .tvFocusScale(chipFocus.focused, 1.04f)
                                     .then(
                                         if (seasons.indexOf(season) == 0) {
                                             Modifier.focusRequester(seasonFocus)

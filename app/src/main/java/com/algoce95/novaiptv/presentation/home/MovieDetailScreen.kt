@@ -54,6 +54,7 @@ import com.algoce95.novaiptv.core.theme.subtleTextColor
 import com.algoce95.novaiptv.data.model.VodMovie
 import com.algoce95.novaiptv.data.metadata.PosterType
 import com.algoce95.novaiptv.presentation.tv.rememberTvFocus
+import com.algoce95.novaiptv.presentation.tv.tryRequestFocus
 import com.algoce95.novaiptv.presentation.tv.tvPress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -67,7 +68,7 @@ fun MovieDetailScreen(movie: VodMovie, onPlay: () -> Unit) {
     val playFocus = remember { FocusRequester() }
 
     LaunchedEffect(movie.movieId) {
-        playFocus.requestFocus()
+        playFocus.tryRequestFocus()
         try {
             vodInfo = requireNotNull(AppContainer.api).getVodInfo(movie.movieId)
         } catch (_: Exception) {
@@ -193,16 +194,11 @@ fun MovieDetailScreen(movie: VodMovie, onPlay: () -> Unit) {
                             color = bodyTextColor(),
                         )
                         Spacer(Modifier.height(30.dp))
-                        val playFocusState = rememberTvFocus()
                         NovaButton(
                             label = "Reproducir película",
                             icon = Icons.Filled.PlayArrow,
                             onClick = ::play,
-                            modifier = Modifier
-                                .focusRequester(playFocus)
-                                .focusable(interactionSource = playFocusState.interaction)
-                                .tvPress(fireOnDown = true, onTap = ::play)
-                                .tvFocusScale(playFocusState.focused, 1.04f),
+                            focusRequester = playFocus,
                         )
                     }
                 }

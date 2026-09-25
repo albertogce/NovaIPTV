@@ -10,9 +10,11 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.algoce95.novaiptv.data.model.StreamingParsers
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
 import java.io.File
@@ -81,12 +83,36 @@ class PrefsStore private constructor(private val context: Context) {
         dataStore.edit { it[stringPreferencesKey(key)] = value }
     }
 
-    suspend fun getStringList(key: String): List<String>? =
-        dataStore.data.map { it[stringSetPreferencesKey(key)]?.toList() }.first()
+    /**
+     * Las listas se guardan como JSON en una clave de texto. Con `stringSet` el
+     * orden no está garantizado y los duplicados se pierden, y tanto el orden de
+     * favoritos y categorías como las teclas de color dependen de la posición.
+     * DataStore identifica las claves por nombre, así que una lista antigua en
+     * Set convive en la misma clave: se lee según lo que haya guardado.
+     */
+    suspend fun getStringList(key: String): List<String>? = when (val raw = rawValue(key)) {
+        is String -> runCatching {
+            val array = JSONArray(raw)
+            (0 until array.length()).map { array.getString(it) }
+        }.getOrNull()
+        is Set<*> -> raw.map { it.toString() }
+        else -> null
+    }
 
     suspend fun setStringList(key: String, value: List<String>) {
-        dataStore.edit { it[stringSetPreferencesKey(key)] = value.toSet() }
+        dataStore.edit { it[stringPreferencesKey(key)] = JSONArray(value).toString() }
     }
+
+    private suspend fun rawValue(key: String): Any? =
+        dataStore.data
+            .map { prefs -> prefs.asMap().entries.firstOrNull { it.key.name == key }?.value }
+            .first()
+
+    fun stringFlow(key: String): Flow<String?> =
+        dataStore.data.map { prefs -> prefs[stringPreferencesKey(key)] }
+
+    fun booleanFlow(key: String, default: Boolean = false): Flow<Boolean> =
+        dataStore.data.map { it[booleanPreferencesKey(key)] ?: default }
 
     suspend fun getBoolean(key: String): Boolean? =
         dataStore.data.map { it[booleanPreferencesKey(key)] }.first()

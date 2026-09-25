@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
@@ -30,6 +33,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.algoce95.novaiptv.R
 import com.algoce95.novaiptv.core.di.AppContainer
+import com.algoce95.novaiptv.core.storage.PrefsStore
+import com.algoce95.novaiptv.core.theme.LocalHighContrast
 import com.algoce95.novaiptv.core.di.vmFactory
 import com.algoce95.novaiptv.core.theme.AppColors
 import com.algoce95.novaiptv.data.model.Parsers
@@ -70,7 +75,16 @@ object Routes {
 @Composable
 fun AppNav() {
     val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = Routes.SPLASH) {
+    // El alto contraste debe regir también en fichas, guía, búsqueda y
+    // reproductor: hasta ahora solo se aplicaba dentro de HOME y Ajustes.
+    // Se lee del almacén directamente: AppContainer aún no está inicializado
+    // mientras vive la pantalla de arranque.
+    val context = LocalContext.current
+    val prefs = remember { PrefsStore.get(context) }
+    val highContrast by prefs.booleanFlow(PrefsStore.Keys.HIGH_CONTRAST)
+        .collectAsState(initial = false)
+    CompositionLocalProvider(LocalHighContrast provides highContrast) {
+        NavHost(navController = navController, startDestination = Routes.SPLASH) {
         composable(Routes.SPLASH) {
             SplashScreen(
                 onDone = { authenticated ->
@@ -148,7 +162,7 @@ fun AppNav() {
         }
         composable(Routes.SEARCH) {
             SearchResultsScreen(
-                query = "",
+                query = AppContainer.searchSnapshot.query,
                 onPlayMovie = { movie ->
                     navController.navigate(Routes.movie(movie.toCacheJson().toString()))
                 },
@@ -179,6 +193,7 @@ fun AppNav() {
                 )
             }
         }
+    }
     }
 }
 

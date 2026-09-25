@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
@@ -286,6 +287,7 @@ private fun SearchField(
     focusRequester: FocusRequester,
     onBack: () -> Unit,
     onArrowDown: () -> Unit,
+    onArrowRight: () -> Unit = onArrowDown,
     onFocusedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -330,8 +332,12 @@ private fun SearchField(
                         onArrowDown()
                         true
                     }
-                    Key.Enter, Key.NumPadEnter, Key.DirectionRight -> {
+                    Key.Enter, Key.NumPadEnter -> {
                         onArrowDown()
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        onArrowRight()
                         true
                     }
                     else -> false
@@ -467,6 +473,7 @@ fun <T> GridContentView(
     onAtRightEdge: (() -> Unit)? = null,
     onColorKey: ((Int) -> Boolean)? = null,
     skipAutoFocus: () -> Boolean = { false },
+    header: (@Composable () -> Unit)? = null,
 ) {
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
@@ -506,7 +513,9 @@ fun <T> GridContentView(
         if (key != null && focusRequesters != null) {
             val index = items.indexOfFirst { itemKey(it) == key }
             if (index >= 0) {
-                gridState.scrollToItem((index / columns.coerceAtLeast(1)) * columns.coerceAtLeast(1))
+                val c = columns.coerceAtLeast(1)
+                val headerRows = if (header != null) 1 else 0
+                gridState.scrollToItem(((index / c) * c) + headerRows)
                 focusRequesters[key]?.requestFocusReady()
             }
         }
@@ -552,6 +561,12 @@ fun <T> GridContentView(
                         event.isKeyDown() && onColorKey?.invoke(event.nativeKeyEvent.keyCode) == true
                     },
             ) {
+                // La cabecera es una fila más de la rejilla: si no, el índice
+                // plano de scrollToItem quedaría desplazado.
+                val headerRows = if (header != null) 1 else 0
+                if (header != null) {
+                    item(span = { GridItemSpan(cols) }) { header() }
+                }
                 gridItemsIndexed(items, key = { _, item -> itemKey(item) }) { index, item ->
                     val isFirstItem = index == 0
                     val isLeftEdge = index % cols == 0
@@ -681,7 +696,8 @@ fun LiveChannelBrowser(
     client: XtreamApiClient,
     onPlay: (LiveChannel, List<LiveChannel>) -> Unit,
     onToggleFavorite: (LiveChannel) -> Unit,
-    onMoveItem: (Int, Int) -> Unit,
+    /** Solo en la categoría de favoritos: mover aquí reordena esa lista. */
+    onMoveItem: ((LiveChannel, Int) -> Unit)?,
     favoriteChannels: List<LiveChannel>,
 ) {
     val channelFocuses = remember { mutableStateMapOf<Int, FocusRequester>() }
@@ -765,13 +781,27 @@ fun LiveChannelBrowser(
                 Brush.verticalGradient(colors = listOf(AppColors.ink, AppColors.contentGradEnd)),
             ),
     ) {
+        // El botón de EPG estaba fuera del recorrido del mando: el buscador
+        // consumía DERECHA para saltar al catálogo y la acción quedaba inhábil.
+        val liveSearchFocus = remember { FocusRequester() }
+        val epgButtonFocus = remember { FocusRequester() }
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            SearchField(searchQuery, onSearchChanged, remember { FocusRequester() }, onBack, requestCategoryFocus, modifier = Modifier.weight(1f))
+            SearchField(
+                searchQuery,
+                onSearchChanged,
+                liveSearchFocus,
+                onBack,
+                requestCategoryFocus,
+                onArrowRight = { epgButtonFocus.requestFocus() },
+                modifier = Modifier.weight(1f),
+            )
             Spacer(Modifier.width(10.dp))
             NovaButton(
                 label = "EPG completo",
                 icon = Icons.Filled.CalendarMonth,
                 onClick = onOpenEpg,
+                focusRequester = epgButtonFocus,
+                leftFocus = liveSearchFocus,
             )
         }
         Row(Modifier.fillMaxSize()) {
@@ -816,6 +846,14 @@ fun LiveChannelBrowser(
                 )
                 Text("${items.size} canales", color = subtleTextColor(), fontSize = 11.sp)
             }
+            if (items.isEmpty()) {
+                EmptyState(
+                    icon = Icons.Filled.SearchOff,
+                    title = "Sin canales aquí",
+                    hint = "Prueba con otra categoría o cambia el texto de búsqueda.",
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
             LazyColumn(state = channelListState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             itemsIndexed(items, key = { _, it -> it.channelId }) { index, channel ->
                 val focus = rememberTvFocus()
@@ -857,12 +895,16 @@ fun LiveChannelBrowser(
                                     true
                                 }
                                 Key.ChannelUp, Key.PageUp -> {
-                                    onMoveItem(index, -1)
-                                    true
+                                    onMoveItem?.let { move ->
+                                        move(channel, -1)
+                                        true
+                                    } ?: false
                                 }
                                 Key.ChannelDown, Key.PageDown -> {
-                                    onMoveItem(index, 1)
-                                    true
+                                    onMoveItem?.let { move ->
+                                        move(channel, 1)
+                                        true
+                                    } ?: false
                                 }
                                 else -> false
                             }
@@ -892,6 +934,7 @@ fun LiveChannelBrowser(
                         }
                     }
                 }
+            }
             }
             }
         }

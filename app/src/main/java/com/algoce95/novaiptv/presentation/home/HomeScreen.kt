@@ -73,6 +73,7 @@ import com.algoce95.novaiptv.presentation.tv.TvKeys
 import com.algoce95.novaiptv.presentation.tv.hideSystemBars
 import com.algoce95.novaiptv.presentation.tv.showSystemBars
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 @Composable
@@ -213,6 +214,8 @@ fun HomeScreen(navController: NavController) {
     var movieQuery by rememberSaveable { mutableStateOf("") }
     var seriesQuery by rememberSaveable { mutableStateOf("") }
     var globalQuery by rememberSaveable { mutableStateOf("") }
+    // Contador que abre el diálogo de búsqueda del inicio desde una tecla de color.
+    var searchSignal by rememberSaveable { mutableIntStateOf(0) }
 
     val favFocus = remember { mutableStateMapOf<Any, FocusRequester>() }
     var favFocusKey by remember { mutableStateOf<Any?>(null) }
@@ -245,18 +248,18 @@ fun HomeScreen(navController: NavController) {
         }
     }
 
-    // Refresco automático silencioso (equivale al Timer periódico). En segundo
-    // plano no se pide nada para no dejar conexiones abiertas del panel.
-    LaunchedEffect(Unit) {
-        while (true) {
-            val minutes = AppContainer.prefs
-                .getString(PrefsStore.Keys.AUTO_REFRESH_MINUTES)?.toIntOrNull() ?: 0
-            if (minutes > 0) {
-                delay(minutes * 60_000L)
-                if (AppContainer.inForeground) vm.silentRefresh()
-            } else {
-                delay(60_000L)
-            }
+    // Refresco automático silencioso (equivale al Timer periódico). Se reanuda
+    // desde cero cuando cambia el ajuste: con el valor viejo en un `delay` largo
+    // el nuevo tardaba horas en notarse. En segundo plano no se pide nada para
+    // no dejar conexiones abiertas del panel.
+    val refreshMinutes by AppContainer.prefs
+        .stringFlow(PrefsStore.Keys.AUTO_REFRESH_MINUTES)
+        .map { it?.toIntOrNull() ?: 0 }
+        .collectAsState(initial = 0)
+    LaunchedEffect(refreshMinutes) {
+        while (refreshMinutes > 0) {
+            delay(refreshMinutes * 60_000L)
+            if (AppContainer.inForeground) vm.silentRefresh()
         }
     }
 
@@ -343,7 +346,10 @@ fun HomeScreen(navController: NavController) {
             "series" -> navigate(ActiveView.SERIES)
             "continuewatching", "continue_watching", "continue-watching" ->
                 navigate(ActiveView.CONTINUE_WATCHING)
-            "search" -> navigate(ActiveView.HOME)
+            "search" -> {
+                navigate(ActiveView.HOME)
+                searchSignal++
+            }
             else -> return false
         }
         return true
@@ -410,6 +416,7 @@ fun HomeScreen(navController: NavController) {
                         movieQuery = movieQuery,
                         seriesQuery = seriesQuery,
                         globalQuery = globalQuery,
+                        searchSignal = searchSignal,
                         progressList = progressList,
                         favFocus = favFocus,
                         favFocusKey = favFocusKey,
@@ -438,6 +445,13 @@ fun HomeScreen(navController: NavController) {
                                 snackbar.showSnackbar("Eliminado de Seguir viendo: ${progress.title}")
                             }
                         },
+                        onProgressUnavailable = { progress ->
+                            scope.launch {
+                                snackbar.showSnackbar(
+                                    "«${progress.title}» ya no está en las categorías visibles",
+                                )
+                            }
+                        },
                         onLoadProgress = ::loadProgress,
                         onColorKey = ::handleColorKey,
                         navController = navController,
@@ -460,6 +474,7 @@ private fun HomeBody(
     movieQuery: String,
     seriesQuery: String,
     globalQuery: String,
+    searchSignal: Int,
     progressList: List<WatchProgress>,
     favFocus: MutableMap<Any, FocusRequester>,
     favFocusKey: Any?,
@@ -480,6 +495,7 @@ private fun HomeBody(
     onReorderFavorites: (Int, Int) -> Unit,
     onMoveFavorite: (Int, Int, List<LiveChannel>) -> Unit,
     onRemoveProgress: (WatchProgress) -> Unit,
+    onProgressUnavailable: (WatchProgress) -> Unit,
     onLoadProgress: () -> Unit,
     onColorKey: (Int) -> Boolean,
     navController: NavController,
@@ -491,14 +507,25 @@ private fun HomeBody(
     val orderedFavs = vm.orderedFavorites(favChannels)
 
     // Reanudar un progreso: las películas van a su ficha; las series, a la
-    // ficha con el episodio a medio ver ya localizado.
+    // ficha con el episodio a medio ver ya localizado. Si el título dejó de
+    // estar visible (categoría oculta en Ajustes) se avisa: sin eso, OK no
+    // hacía nada y parecía un botón muerto.
     fun resumeProgress(progress: WatchProgress) {
         if (progress.id.startsWith("movie:")) {
             val id = progress.id.substringAfter("movie:").toIntOrNull()
-            visibleMovies.firstOrNull { it.movieId == id }?.let(onPlayMovie)
+            val movie = visibleMovies.firstOrNull { it.movieId == id }
+            if (movie == null) {
+                onProgressUnavailable(progress)
+            } else {
+                onPlayMovie(movie)
+            }
         } else {
-            visibleSeries.firstOrNull { "series:${it.seriesId}" == progress.id }
-                ?.let { onPlaySeries(it, progress.episodeId) }
+            val series = visibleSeries.firstOrNull { "series:${it.seriesId}" == progress.id }
+            if (series == null) {
+                onProgressUnavailable(progress)
+            } else {
+                onPlaySeries(series, progress.episodeId)
+            }
         }
     }
 
@@ -526,7 +553,9 @@ private fun HomeBody(
             onSelectMovies = { onNavigate(ActiveView.MOVIES) },
             onSelectSeries = { onNavigate(ActiveView.SERIES) },
             onSelectContinueWatching = { onNavigate(ActiveView.CONTINUE_WATCHING) },
+            onSelectHistory = { onNavigate(ActiveView.HISTORY) },
             onSelectSettings = { navController.navigate(Routes.SETTINGS) },
+            searchSignal = searchSignal,
             onRefresh = { vm.load(forceRefresh = true) },
             globalSearchQuery = globalQuery,
             recentlyAdded = recentlyAdded(visibleMovies, visibleSeries),
@@ -546,6 +575,7 @@ private fun HomeBody(
                 onGlobalQuery(query)
                 val q = query.lowercase()
                 AppContainer.searchSnapshot = SearchSnapshot(
+                    query = query,
                     channels = visibleLive.filter { it.channelName.lowercase().contains(q) },
                     movies = visibleMovies.filter { it.title.lowercase().contains(q) },
                     series = visibleSeries.filter { it.title.lowercase().contains(q) },
@@ -589,8 +619,18 @@ private fun HomeBody(
                 client = vm.client(),
                 onPlay = onPlayChannel,
                 onToggleFavorite = onToggleFavorite,
-                onMoveItem = { index, direction ->
-                    onMoveFavorite(index, direction, liveFiltered)
+                onMoveItem = if (isFavSelected) {
+                    { channel, direction ->
+                        // El índice se toma sobre la lista real de favoritos:
+                        // la que se ve puede estar filtrada por la búsqueda.
+                        onMoveFavorite(
+                            orderedFavs.indexOfFirst { it.channelId == channel.channelId },
+                            direction,
+                            orderedFavs,
+                        )
+                    }
+                } else {
+                    null
                 },
                 favoriteChannels = orderedFavs,
             )

@@ -99,6 +99,21 @@ fun SearchResultsScreen(
                 .fillMaxSize()
                 .padding(16.dp),
         ) {
+            item {
+                Column {
+                    Text(
+                        text = "Resultados para \"$query\"",
+                        color = Color.White,
+                        style = NovaType.title,
+                    )
+                    Text(
+                        text = "Pulsa Atrás para volver y refinar la búsqueda.",
+                        style = NovaType.meta,
+                        color = subtleTextColor(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
             if (snapshot.channels.isNotEmpty()) {
                 item {
                     ResultSectionTitle(
@@ -123,6 +138,7 @@ fun SearchResultsScreen(
                                 QueueItem(
                                     streamUrl = client.liveStreamUrl(it.channelId),
                                     title = it.channelName,
+                                    channelId = it.channelId,
                                 )
                             }
                             var queueIndex = snapshot.channels.indexOfFirst {

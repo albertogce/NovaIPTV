@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -124,16 +125,32 @@ fun HistoryView(
         columns = 0,
         itemContent = { HistoryCard(entry = it) },
         onTap = onTap,
+        header = {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp)) {
+                Text(
+                    text = "Historial",
+                    color = Color.White,
+                    style = NovaType.title,
+                )
+                Text(
+                    text = "${entries.size} títulos reproducidos últimamente.",
+                    style = NovaType.meta,
+                    color = subtleTextColor(),
+                )
+            }
+        },
     )
 }
 
 @Composable
 private fun HistoryCard(entry: HistoryEntry) {
     // Mismo lenguaje visual que la rejilla del catálogo: arte completo y título
-    // apoyado sobre un velo degradado.
+    // apoyado sobre un velo degradado. La proporción se fija aquí: sin arte,
+    // el fallback de iniciales medía poco y la tarjeta se encogía a una píldora.
     Box(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
+            .aspectRatio(0.68f)
             .background(AppColors.posterFallback),
     ) {
         RemoteImage(

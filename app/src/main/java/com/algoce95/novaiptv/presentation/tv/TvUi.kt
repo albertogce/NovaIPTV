@@ -44,6 +44,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -367,23 +369,42 @@ fun EmptyState(
     }
 }
 
-/** Botón de acento compartido (mismo lenguaje visual que las tarjetas). */
+/**
+ * Botón de acento compartido (mismo lenguaje visual que las tarjetas). El foco
+ * lo gestiona el propio botón: quien quiera dirigirlo pasa [focusRequester] en
+ * lugar de añadir otro `focusable`, o el anillo de foco no se enteraría.
+ */
 @Composable
 fun NovaButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
+    focusRequester: FocusRequester? = null,
+    leftFocus: FocusRequester? = null,
+    downFocus: FocusRequester? = null,
+    autofocus: Boolean = false,
 ) {
     val focus = rememberTvFocus()
     val focused = focus.focused
+    val focusProps = if (leftFocus != null || downFocus != null) {
+        Modifier.focusProperties {
+            leftFocus?.let { left = it }
+            downFocus?.let { down = it }
+        }
+    } else {
+        Modifier
+    }
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(if (focused) AppColors.accentBright else AppColors.accent)
             .border(2.dp, Color.White.copy(alpha = if (focused) 0.9f else 0f), RoundedCornerShape(12.dp))
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .then(focusProps)
             .focusable(interactionSource = focus.interaction)
-            .tvPress(fireOnDown = true, onTap = onClick)
+            .tvPress(fireOnDown = true, autofocus = autofocus, onTap = onClick)
+            .tvFocusScale(focused, 1.03f)
             .padding(horizontal = 24.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,

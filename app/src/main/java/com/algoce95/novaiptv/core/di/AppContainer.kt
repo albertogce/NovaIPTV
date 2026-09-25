@@ -38,6 +38,7 @@ data class PlayerSession(
 )
 
 data class SearchSnapshot(
+    val query: String = "",
     val channels: List<LiveChannel> = emptyList(),
     val movies: List<VodMovie> = emptyList(),
     val series: List<Series> = emptyList(),

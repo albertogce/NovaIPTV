@@ -97,6 +97,7 @@ fun EpgGuideScreen(onPlay: () -> Unit, onBack: () -> Unit) {
             QueueItem(
                 streamUrl = client.liveStreamUrl(it.channelId),
                 title = it.channelName,
+                channelId = it.channelId,
             )
         }
         var index = channels.indexOfFirst { it.channelId == channel.channelId }

@@ -42,6 +42,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -59,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -755,8 +757,23 @@ private fun SwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    // El mando se detiene en la fila, no en el interruptor: el halo de foco de
+    // Material apenas se veía sobre el fondo y no sabías qué estabas pulsando.
+    val focus = rememberTvFocus()
+    val focused = focus.focused
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (focused) AppColors.focusFill else Color.Transparent)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) AppColors.mint else Color.Transparent,
+                shape = RoundedCornerShape(8.dp),
+            )
+            .focusable(interactionSource = focus.interaction)
+            .tvPress(fireOnDown = true, onTap = { onCheckedChange(!checked) })
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -766,9 +783,29 @@ private fun SwitchRow(
                 Text(text = subtitle, color = subtleTextColor(), fontSize = 13.sp)
             }
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = novaSwitchColors(),
+            modifier = Modifier.focusProperties { canFocus = false },
+        )
     }
 }
+
+/**
+ * El interruptor por defecto heredaba el `onPrimary` del tema: la pastilla
+ * quedaba casi negra sobre la pista azul y se leía como un color ajeno a la
+ * app. Pista de acento y pastilla blanca en ambos estados.
+ */
+@Composable
+private fun novaSwitchColors() = SwitchDefaults.colors(
+    checkedTrackColor = AppColors.accent,
+    checkedThumbColor = Color.White,
+    checkedBorderColor = AppColors.accent,
+    uncheckedTrackColor = AppColors.panel,
+    uncheckedThumbColor = Color.White.copy(alpha = 0.75f),
+    uncheckedBorderColor = Color.White.copy(alpha = 0.25f),
+)
 
 @Composable
 private fun ColorActionRow(colorKey: String, action: String, onCycle: () -> Unit) {
@@ -930,7 +967,7 @@ private fun CategoryTab(
                         Spacer(Modifier.width(12.dp))
                         Text(text = name, color = Color.White, maxLines = 1, fontSize = 14.sp)
                     }
-                    Switch(checked = visible, onCheckedChange = null)
+                    Switch(checked = visible, onCheckedChange = null, colors = novaSwitchColors())
                 }
             }
         }

@@ -1,6 +1,5 @@
 package com.algoce95.novaiptv.presentation.home
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +26,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.PlayArrow
@@ -37,13 +38,10 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -58,15 +56,19 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.algoce95.novaiptv.core.theme.AppColors
@@ -78,6 +80,10 @@ import com.algoce95.novaiptv.data.metadata.PosterType
 import com.algoce95.novaiptv.data.model.WatchProgress
 import com.algoce95.novaiptv.presentation.tv.MarqueeText
 import com.algoce95.novaiptv.presentation.tv.RemoteImage
+import com.algoce95.novaiptv.presentation.tv.TvKeys
+import com.algoce95.novaiptv.presentation.tv.isKeyDown
+import com.algoce95.novaiptv.presentation.tv.requestFocusReady
+import com.algoce95.novaiptv.presentation.tv.tryRequestFocus
 import com.algoce95.novaiptv.presentation.tv.rememberTvFocus
 import com.algoce95.novaiptv.presentation.tv.tvFocusScale
 import com.algoce95.novaiptv.presentation.tv.tvPress
@@ -95,6 +101,7 @@ fun DashboardView(
     onSelectMovies: () -> Unit,
     onSelectSeries: () -> Unit,
     onSelectContinueWatching: () -> Unit,
+    onSelectHistory: () -> Unit,
     onSelectSettings: () -> Unit,
     onRefresh: () -> Unit,
     globalSearchQuery: String,
@@ -104,18 +111,26 @@ fun DashboardView(
     continueWatching: List<WatchProgress> = emptyList(),
     progressImage: (WatchProgress) -> String = { it.poster.orEmpty() },
     onSelectProgress: (WatchProgress) -> Unit = {},
+    searchSignal: Int = 0,
 ) {
     var showSearch by remember { mutableStateOf(false) }
     var draftQuery by remember { mutableStateOf(globalSearchQuery) }
     val heroFocus = remember { FocusRequester() }
     val scrollState = rememberScrollState()
+    val hero = heroEntry(continueWatching, recentlyAdded)
 
     // Al abrir, el foco en el héroe desplaza la vista hacia abajo y recorta la
-    // cabecera. Devolvemos el scroll al inicio tras asentarse el foco.
+    // cabecera. Devolvemos el scroll al inicio tras asentarse el foco. Sin VOD
+    // no hay héroe, y pedir el foco a un nodo inexistente tumbaría la app.
     LaunchedEffect(Unit) {
-        heroFocus.requestFocus()
+        if (hero != null) heroFocus.tryRequestFocus()
         withFrameNanos { }
         scrollState.scrollTo(0)
+    }
+
+    // La tecla de color "Buscar" llega como señal externa: el diálogo vive aquí.
+    LaunchedEffect(searchSignal) {
+        if (searchSignal > 0) showSearch = true
     }
 
     if (showSearch) {
@@ -129,8 +144,6 @@ fun DashboardView(
             },
         )
     }
-
-    val hero = heroEntry(continueWatching, recentlyAdded)
 
     // La spec por defecto en Android (pivot) CENTRA el elemento enfocado: al
     // mover el foco entre los botones, la vista salta hacia abajo. Con esta
@@ -158,6 +171,7 @@ fun DashboardView(
                     expiryText = expiryText,
                     expiryColor = expiryColor,
                     onRefresh = onRefresh,
+                    onSelectHistory = onSelectHistory,
                     onSelectSettings = onSelectSettings,
                 )
                 Spacer(Modifier.height(16.dp))
@@ -232,18 +246,17 @@ private fun heroEntry(
     ?: recent.firstOrNull()?.let { HeroEntry.Recent(it) }
 
 /**
- * Desplazamiento de "traer a vista" mínimo: 0 si ya es visible; si no, el
- * menor margen necesario (arriba o abajo).
+ * Desplazamiento de "traer a vista" mínimo: 0 si ya es visible; si no, lo justo
+ * para asomar el borde que falte (negativo arriba, positivo abajo).
  */
 @OptIn(ExperimentalFoundationApi::class)
 private object MinimalBringIntoViewSpec : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
         val end = offset + size
         if (offset >= 0f && end <= containerSize) return 0f
+        // Más alto que el viewport: mejor dejar el borde superior donde está.
         if (offset < 0f && end > containerSize) return 0f
-        val up = -offset
-        val down = end - containerSize
-        return if (up <= down) offset else down
+        return if (offset < 0f) offset else end - containerSize
     }
 }
 
@@ -256,6 +269,7 @@ private fun DashboardHeader(
     expiryText: String?,
     expiryColor: Color?,
     onRefresh: () -> Unit,
+    onSelectHistory: () -> Unit,
     onSelectSettings: () -> Unit,
 ) {
     Row(
@@ -288,6 +302,12 @@ private fun DashboardHeader(
             icon = Icons.Filled.Refresh,
             label = "Actualizar",
             onClick = onRefresh,
+        )
+        Spacer(Modifier.width(8.dp))
+        HeaderIconButton(
+            icon = Icons.Outlined.History,
+            label = "Historial",
+            onClick = onSelectHistory,
         )
         Spacer(Modifier.width(8.dp))
         HeaderIconButton(
@@ -524,7 +544,7 @@ private fun HeroCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = if (progress != null) "Reanudar" else "Ver ficha",
+                        text = "Ver ficha",
                         color = Color.White,
                         style = NovaType.subtitle.copy(fontWeight = FontWeight.W700),
                     )
@@ -596,10 +616,10 @@ private fun QuickAccessTile(
         modifier = modifier
             .height(86.dp)
             .clip(NovaShapes.card)
-            .background(if (focused) accent.copy(alpha = 0.22f) else AppColors.panel)
+            .background(if (focused) AppColors.mint.copy(alpha = 0.14f) else AppColors.panel)
             .border(
                 width = if (focused) 2.dp else 1.dp,
-                color = if (focused) accent else Color.White.copy(alpha = 0.08f),
+                color = if (focused) AppColors.mint else Color.White.copy(alpha = 0.08f),
                 shape = NovaShapes.card,
             )
             .focusable(interactionSource = focus.interaction)
@@ -618,7 +638,7 @@ private fun QuickAccessTile(
             Icon(
                 icon,
                 contentDescription = null,
-                tint = if (focused) Color.White else accent,
+                tint = accent,
                 modifier = Modifier.size(22.dp),
             )
         }
@@ -855,6 +875,17 @@ private fun TvSearchDialog(
     onSubmit: (String) -> Unit,
 ) {
     var query by remember { mutableStateOf(initialQuery) }
+    val fieldFocus = remember { FocusRequester() }
+    val cancelFocus = remember { FocusRequester() }
+    val searchFocus = remember { FocusRequester() }
+
+    fun submit() {
+        val q = query.trim()
+        if (q.isNotEmpty()) onSubmit(q) else onDismiss()
+    }
+
+    LaunchedEffect(Unit) { fieldFocus.requestFocusReady() }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = AppColors.panel,
@@ -863,7 +894,7 @@ private fun TvSearchDialog(
         text = {
             Column {
                 Text(
-                    "Escribe lo que buscas o pulsa abajo para acceder a las acciones.",
+                    "Escribe lo que buscas y pulsa OK para buscar.",
                     color = faintTextColor(),
                     style = NovaType.meta,
                 )
@@ -877,25 +908,93 @@ private fun TvSearchDialog(
                     },
                     singleLine = true,
                     shape = NovaShapes.card,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { submit() }),
+                    modifier = Modifier
+                        .focusRequester(fieldFocus)
+                        .focusProperties { down = cancelFocus }
+                        // Con teclado suave no siempre llega la acción de IME:
+                        // OK sobre el campo debe buscar ya.
+                        .onPreviewKeyEvent { event ->
+                            if (event.isKeyDown() && TvKeys.isSelectKey(event.key)) {
+                                submit()
+                                true
+                            } else {
+                                false
+                            }
+                        },
                 )
             }
         },
         dismissButton = {
-            OutlinedButton(
+            DialogButton(
+                label = "Cancelar",
+                primary = false,
                 onClick = onDismiss,
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
-            ) { Text("Cancelar", color = Color.White) }
+                focusNode = cancelFocus,
+                rightNode = searchFocus,
+            )
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    val q = query.trim()
-                    if (q.isNotEmpty()) onSubmit(q) else onDismiss()
-                },
-                colors = ButtonDefaults.textButtonColors(contentColor = AppColors.mint),
-            ) {
-                Text("Buscar", fontWeight = FontWeight.W700)
-            }
+            DialogButton(
+                label = "Buscar",
+                primary = true,
+                onClick = { submit() },
+                focusNode = searchFocus,
+                leftNode = cancelFocus,
+            )
         },
     )
+}
+
+/** Botón de diálogo con el lenguaje de foco de la app: los de Material no muestran el foco. */
+@Composable
+private fun DialogButton(
+    label: String,
+    primary: Boolean,
+    onClick: () -> Unit,
+    focusNode: FocusRequester,
+    leftNode: FocusRequester? = null,
+    rightNode: FocusRequester? = null,
+) {
+    val focus = rememberTvFocus()
+    val focused = focus.focused
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(
+                when {
+                    focused && primary -> AppColors.accentBright
+                    focused -> AppColors.focusFill
+                    primary -> AppColors.accent
+                    else -> Color.Transparent
+                },
+            )
+            .border(
+                width = 2.dp,
+                color = if (focused) {
+                    Color.White.copy(alpha = 0.9f)
+                } else if (primary) {
+                    Color.Transparent
+                } else {
+                    Color.White.copy(alpha = 0.25f)
+                },
+                shape = shape,
+            )
+            .focusRequester(focusNode)
+            .focusProperties {
+                leftNode?.let { left = it }
+                rightNode?.let { right = it }
+            }
+            .focusable(interactionSource = focus.interaction)
+            .tvPress(fireOnDown = true, onTap = onClick)
+            .padding(horizontal = 22.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = label,
+            color = Color.White,
+            style = NovaType.subtitle.copy(fontWeight = FontWeight.W700),
+        )
+    }
 }
