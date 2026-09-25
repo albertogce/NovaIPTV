@@ -149,7 +149,7 @@ private fun LoadingTableCell(
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(
-                        color = AppColors.pink,
+                        color = AppColors.sky,
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(16.dp),
                     )
@@ -180,7 +180,7 @@ private fun LoadingSection(name: String, loaded: Boolean) {
             )
         } else {
             CircularProgressIndicator(
-                color = AppColors.pink,
+                color = AppColors.sky,
                 strokeWidth = 2.dp,
                 modifier = Modifier.size(22.dp),
             )
@@ -240,7 +240,9 @@ fun HomeScreen(navController: NavController) {
         // se entra con el contenido como la primera vez.
         if (activeView != ActiveView.MOVIES) movieQuery = ""
         if (activeView != ActiveView.SERIES) seriesQuery = ""
-        if (activeView == ActiveView.CONTINUE_WATCHING) loadProgress()
+        if (activeView == ActiveView.CONTINUE_WATCHING || activeView == ActiveView.HOME) {
+            loadProgress()
+        }
     }
 
     // Refresco automático silencioso (equivale al Timer periódico). En segundo
@@ -380,7 +382,7 @@ fun HomeScreen(navController: NavController) {
                         contentAlignment = Alignment.Center,
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = AppColors.pink)
+                            CircularProgressIndicator(color = AppColors.sky)
                             Text(
                                 text = "Cargando información de IPTV",
                                 color = Color.White,
@@ -488,6 +490,18 @@ private fun HomeBody(
     val favChannels = state.channels.filter { it.isFavorite }
     val orderedFavs = vm.orderedFavorites(favChannels)
 
+    // Reanudar un progreso: las películas van a su ficha; las series, a la
+    // ficha con el episodio a medio ver ya localizado.
+    fun resumeProgress(progress: WatchProgress) {
+        if (progress.id.startsWith("movie:")) {
+            val id = progress.id.substringAfter("movie:").toIntOrNull()
+            visibleMovies.firstOrNull { it.movieId == id }?.let(onPlayMovie)
+        } else {
+            visibleSeries.firstOrNull { "series:${it.seriesId}" == progress.id }
+                ?.let { onPlaySeries(it, progress.episodeId) }
+        }
+    }
+
     // Transición suave al cambiar de vista: fundido + deslizamiento corto.
     AnimatedContent(
         targetState = activeView,
@@ -516,6 +530,9 @@ private fun HomeBody(
             onRefresh = { vm.load(forceRefresh = true) },
             globalSearchQuery = globalQuery,
             recentlyAdded = recentlyAdded(visibleMovies, visibleSeries),
+            continueWatching = progressList,
+            progressImage = { progress -> progressImage(progress, visibleMovies, visibleSeries) },
+            onSelectProgress = ::resumeProgress,
             onSelectRecent = { item ->
                 if (item.type == "movie") {
                     visibleMovies.firstOrNull { it.movieId.toString() == item.id }
@@ -605,8 +622,7 @@ private fun HomeBody(
                     PosterCard(
                         title = it.title,
                         imageUrl = it.logo,
-                        icon = androidx.compose.material.icons.Icons.Outlined.Movie,
-                        metadata = if (it.year > 0) it.year.toString() else "Película",
+                        metadata = if (it.year > 0) it.year.toString() else "",
                         accent = AppColors.amber,
                     )
                 },
@@ -643,8 +659,7 @@ private fun HomeBody(
                     PosterCard(
                         title = it.title,
                         imageUrl = it.logo,
-                        icon = androidx.compose.material.icons.Icons.Outlined.Tv,
-                        metadata = if (it.year > 0) it.year.toString() else "Serie",
+                        metadata = if (it.year > 0) it.year.toString() else "",
                         accent = AppColors.accent,
                         fallbackType = PosterType.SERIES,
                     )
@@ -681,15 +696,7 @@ private fun HomeBody(
         ActiveView.CONTINUE_WATCHING -> ContinueWatchingView(
             items = progressList,
             imageFor = { progress -> progressImage(progress, visibleMovies, visibleSeries) },
-            onTap = { progress ->
-                if (progress.id.startsWith("movie:")) {
-                    val id = progress.id.substringAfter("movie:").toIntOrNull()
-                    visibleMovies.firstOrNull { it.movieId == id }?.let(onPlayMovie)
-                } else {
-                    visibleSeries.firstOrNull { "series:${it.seriesId}" == progress.id }
-                        ?.let { onPlaySeries(it, progress.episodeId) }
-                }
-            },
+            onTap = ::resumeProgress,
             onLongPress = onRemoveProgress,
             onColorKey = onColorKey,
         )

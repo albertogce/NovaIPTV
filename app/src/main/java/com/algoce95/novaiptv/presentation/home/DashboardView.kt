@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -14,12 +13,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -28,21 +29,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LiveTv
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.PlayCircleOutline
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,30 +54,35 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.algoce95.novaiptv.core.theme.AppColors
+import com.algoce95.novaiptv.core.theme.NovaShapes
+import com.algoce95.novaiptv.core.theme.NovaType
 import com.algoce95.novaiptv.core.theme.faintTextColor
 import com.algoce95.novaiptv.core.theme.subtleTextColor
 import com.algoce95.novaiptv.data.metadata.PosterType
+import com.algoce95.novaiptv.data.model.WatchProgress
 import com.algoce95.novaiptv.presentation.tv.MarqueeText
 import com.algoce95.novaiptv.presentation.tv.RemoteImage
 import com.algoce95.novaiptv.presentation.tv.rememberTvFocus
 import com.algoce95.novaiptv.presentation.tv.tvFocusScale
 import com.algoce95.novaiptv.presentation.tv.tvPress
 
-/** Paridad con `HomeCenterDashboard` de Flutter. */
+/** Paridad con `HomeCenterDashboard` de Flutter, con hero y filas horizontales. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DashboardView(
@@ -97,16 +101,19 @@ fun DashboardView(
     onSearchSubmitted: (String) -> Unit,
     recentlyAdded: List<RecentItem> = emptyList(),
     onSelectRecent: (RecentItem) -> Unit = {},
+    continueWatching: List<WatchProgress> = emptyList(),
+    progressImage: (WatchProgress) -> String = { it.poster.orEmpty() },
+    onSelectProgress: (WatchProgress) -> Unit = {},
 ) {
     var showSearch by remember { mutableStateOf(false) }
     var draftQuery by remember { mutableStateOf(globalSearchQuery) }
-    val firstButtonFocus = remember { FocusRequester() }
+    val heroFocus = remember { FocusRequester() }
     val scrollState = rememberScrollState()
 
-    // Al abrir, el foco en el primer botón desplaza la vista hacia abajo y
-    // recorta la cabecera. Devolvemos el scroll al inicio tras asentarse el foco.
+    // Al abrir, el foco en el héroe desplaza la vista hacia abajo y recorta la
+    // cabecera. Devolvemos el scroll al inicio tras asentarse el foco.
     LaunchedEffect(Unit) {
-        firstButtonFocus.requestFocus()
+        heroFocus.requestFocus()
         withFrameNanos { }
         scrollState.scrollTo(0)
     }
@@ -122,6 +129,8 @@ fun DashboardView(
             },
         )
     }
+
+    val hero = heroEntry(continueWatching, recentlyAdded)
 
     // La spec por defecto en Android (pivot) CENTRA el elemento enfocado: al
     // mover el foco entre los botones, la vista salta hacia abajo. Con esta
@@ -140,90 +149,69 @@ fun DashboardView(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
-                    .padding(horizontal = 24.dp, vertical = 22.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .padding(horizontal = 28.dp, vertical = 18.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    HeaderIconButton(
-                        icon = Icons.Filled.Refresh,
-                        label = "Actualizar",
-                        onClick = onRefresh,
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    HeaderIconButton(
-                        icon = Icons.Filled.Settings,
-                        label = "Ajustes",
-                        onClick = onSelectSettings,
+                DashboardHeader(
+                    totalChannels = totalChannels,
+                    totalMovies = totalMovies,
+                    totalSeries = totalSeries,
+                    expiryText = expiryText,
+                    expiryColor = expiryColor,
+                    onRefresh = onRefresh,
+                    onSelectSettings = onSelectSettings,
+                )
+                Spacer(Modifier.height(16.dp))
+                if (hero != null) {
+                    HeroCard(
+                        entry = hero,
+                        focusRequester = heroFocus,
+                        autofocus = true,
+                        onOpen = {
+                            when (hero) {
+                                is HeroEntry.Progress -> onSelectProgress(hero.progress)
+                                is HeroEntry.Recent -> onSelectRecent(hero.item)
+                            }
+                        },
                     )
                 }
-                Spacer(Modifier.height(24.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    LibraryStat(Icons.Filled.LiveTv, totalChannels, "canales", AppColors.mint)
-                    LibraryStat(Icons.Outlined.Movie, totalMovies, "películas", AppColors.amber)
-                    LibraryStat(Icons.Outlined.Tv, totalSeries, "series", AppColors.accent)
-                }
-                Spacer(Modifier.height(18.dp))
-                if (expiryText != null && expiryColor != null) {
-                    Text(
-                        text = expiryText,
-                        color = expiryColor,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.W600,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(18.dp))
-                }
+                Spacer(Modifier.height(16.dp))
                 SearchActionButton(
                     query = draftQuery,
                     onClick = { showSearch = true },
                 )
-                Spacer(Modifier.height(28.dp))
-                Text(
-                    text = "Explorar biblioteca",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.W700,
+                Spacer(Modifier.height(18.dp))
+                QuickAccessRow(
+                    totalChannels = totalChannels,
+                    totalMovies = totalMovies,
+                    totalSeries = totalSeries,
+                    continueCount = continueWatching.size,
+                    onSelectLive = onSelectLive,
+                    onSelectMovies = onSelectMovies,
+                    onSelectSeries = onSelectSeries,
+                    onSelectContinueWatching = onSelectContinueWatching,
                 )
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
-                ) {
-                    MenuCenterButton(
-                        icon = Icons.Filled.LiveTv,
-                        label = "Canales en Vivo",
-                        accent = AppColors.mint,
-                        onPressed = onSelectLive,
-                        focusRequester = firstButtonFocus,
-                        autofocus = true,
-                    )
-                    MenuCenterButton(
-                        icon = Icons.Filled.Movie,
-                        label = "Películas",
-                        accent = AppColors.amber,
-                        onPressed = onSelectMovies,
-                    )
-                    MenuCenterButton(
-                        icon = Icons.Outlined.Tv,
-                        label = "Series",
-                        accent = AppColors.accent,
-                        onPressed = onSelectSeries,
-                    )
-                    MenuCenterButton(
-                        icon = Icons.Filled.PlayCircleOutline,
-                        label = "Seguir viendo",
-                        accent = AppColors.mint,
-                        onPressed = onSelectContinueWatching,
-                    )
+                if (continueWatching.size > 1) {
+                    Spacer(Modifier.height(26.dp))
+                    HomeRow(title = "Seguir viendo") {
+                        items(continueWatching.take(12), key = { it.id }) { progress ->
+                            ContinueTile(
+                                progress = progress,
+                                imageUrl = progressImage(progress),
+                                onClick = { onSelectProgress(progress) },
+                            )
+                        }
+                    }
                 }
                 if (recentlyAdded.isNotEmpty()) {
-                    Spacer(Modifier.height(30.dp))
-                    RecentlyAddedRow(items = recentlyAdded, onSelect = onSelectRecent)
+                    Spacer(Modifier.height(26.dp))
+                    HomeRow(title = "Añadido recientemente") {
+                        items(recentlyAdded, key = { "${it.type}:${it.id}" }) { item ->
+                            RecentTile(
+                                item = item,
+                                onClick = { onSelectRecent(item) },
+                            )
+                        }
+                    }
                 }
                 Spacer(Modifier.height(32.dp))
             }
@@ -231,8 +219,22 @@ fun DashboardView(
     }
 }
 
-/** Desplazamiento de "traer a vista" mínimo: 0 si ya es visible; si no, el
- *  menor margen necesario (arriba o abajo). */
+/** Lo que abre el héroe: primero lo que se quedó a medias, si no, lo más nuevo. */
+private sealed interface HeroEntry {
+    data class Progress(val progress: WatchProgress) : HeroEntry
+    data class Recent(val item: RecentItem) : HeroEntry
+}
+
+private fun heroEntry(
+    progress: List<WatchProgress>,
+    recent: List<RecentItem>,
+): HeroEntry? = progress.firstOrNull()?.let { HeroEntry.Progress(it) }
+    ?: recent.firstOrNull()?.let { HeroEntry.Recent(it) }
+
+/**
+ * Desplazamiento de "traer a vista" mínimo: 0 si ya es visible; si no, el
+ * menor margen necesario (arriba o abajo).
+ */
 @OptIn(ExperimentalFoundationApi::class)
 private object MinimalBringIntoViewSpec : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
@@ -242,6 +244,57 @@ private object MinimalBringIntoViewSpec : BringIntoViewSpec {
         val up = -offset
         val down = end - containerSize
         return if (up <= down) offset else down
+    }
+}
+
+/** Cabecera: marca, contadores de biblioteca, caducidad y acciones. */
+@Composable
+private fun DashboardHeader(
+    totalChannels: Int,
+    totalMovies: Int,
+    totalSeries: Int,
+    expiryText: String?,
+    expiryColor: Color?,
+    onRefresh: () -> Unit,
+    onSelectSettings: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "NOVA",
+            style = NovaType.sectionTitle.copy(color = Color.White, letterSpacing = 3.sp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(text = "IPTV", style = NovaType.sectionTitle.copy(color = AppColors.accent))
+        Spacer(Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LibraryStat(Icons.Filled.LiveTv, totalChannels, "canales", AppColors.mint)
+            LibraryStat(Icons.Outlined.Movie, totalMovies, "películas", AppColors.amber)
+            LibraryStat(Icons.Outlined.Tv, totalSeries, "series", AppColors.accent)
+        }
+        Spacer(Modifier.width(14.dp))
+        if (expiryText != null && expiryColor != null) {
+            Text(
+                text = expiryText,
+                style = NovaType.caption.copy(fontWeight = FontWeight.W600),
+                color = expiryColor,
+                maxLines = 1,
+            )
+            Spacer(Modifier.width(14.dp))
+        }
+        HeaderIconButton(
+            icon = Icons.Filled.Refresh,
+            label = "Actualizar",
+            onClick = onRefresh,
+        )
+        Spacer(Modifier.width(8.dp))
+        HeaderIconButton(
+            icon = Icons.Filled.Settings,
+            label = "Ajustes",
+            onClick = onSelectSettings,
+        )
     }
 }
 
@@ -259,8 +312,8 @@ private fun HeaderIconButton(
             .clip(CircleShape)
             .background(if (focus.focused) AppColors.focusFill else Color.Transparent)
             .border(
-                width = if (focus.focused) 2.dp else 0.dp,
-                color = if (focus.focused) AppColors.mint else Color.Transparent,
+                width = if (focus.focused) 2.dp else 1.dp,
+                color = if (focus.focused) AppColors.mint else Color.White.copy(alpha = 0.10f),
                 shape = CircleShape,
             )
             .focusable(interactionSource = focus.interaction)
@@ -278,50 +331,362 @@ private fun HeaderIconButton(
 }
 
 @Composable
-private fun RecentlyAddedRow(items: List<RecentItem>, onSelect: (RecentItem) -> Unit) {    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "Añadido recientemente",
-            color = Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.W700,
-        )
-        Spacer(Modifier.height(12.dp))
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.fillMaxWidth(),
+private fun LibraryStat(icon: ImageVector, value: Int, label: String, color: Color) {
+    Row(
+        modifier = Modifier
+            .clip(NovaShapes.chip)
+            .background(AppColors.panel)
+            .border(1.dp, Color.White.copy(alpha = 0.08f), NovaShapes.chip)
+            .padding(horizontal = 11.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(7.dp))
+        Text(text = "$value", style = NovaType.subtitle.copy(color = Color.White))
+        Spacer(Modifier.width(4.dp))
+        Text(text = label, style = NovaType.meta, color = faintTextColor())
+    }
+}
+
+/**
+ * Héroe: arte ambiental de fondo + carátula y acción principal. Es lo primero
+ * que se ve al abrir la app, así que concentra lo más relevante.
+ */
+@Composable
+private fun HeroCard(
+    entry: HeroEntry,
+    onOpen: () -> Unit,
+    focusRequester: FocusRequester? = null,
+    autofocus: Boolean = false,
+) {
+    val focus = rememberTvFocus()
+    val focused = focus.focused
+    val title: String
+    val label: String
+    val accent: Color
+    val poster: String
+    val fallbackType: PosterType
+    val progress: Float?
+    when (entry) {
+        is HeroEntry.Progress -> {
+            title = entry.progress.title
+            label = "SEGUIR VIENDO"
+            accent = AppColors.mint
+            poster = entry.progress.poster.orEmpty()
+            fallbackType = if (entry.progress.id.startsWith("movie:")) {
+                PosterType.MOVIE
+            } else {
+                PosterType.SERIES
+            }
+            progress = entry.progress.fraction.toFloat()
+        }
+        is HeroEntry.Recent -> {
+            title = entry.item.title
+            label = "AÑADIDO RECIENTEMENTE"
+            accent = if (entry.item.type == "movie") AppColors.amber else AppColors.accent
+            poster = entry.item.logo
+            fallbackType = if (entry.item.type == "movie") PosterType.MOVIE else PosterType.SERIES
+            progress = null
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(252.dp)
+            .shadow(if (focused) 24.dp else 10.dp, NovaShapes.tile)
+            .clip(NovaShapes.tile)
+            .background(
+                Brush.linearGradient(
+                    listOf(AppColors.cardGradStart, AppColors.cardGradEnd),
+                ),
+            )
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .focusable(interactionSource = focus.interaction)
+            .tvPress(
+                autofocus = autofocus,
+                ignoreInitialSelect = true,
+                fireOnDown = true,
+                onTap = onOpen,
+            )
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) AppColors.mint else Color.White.copy(alpha = 0.08f),
+                shape = NovaShapes.tile,
+            )
+            .tvFocusScale(focused, 1.012f),
+    ) {
+        // El mismo arte, muy tenido, da profundidad al panel sin recortar la carátula.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .alpha(0.20f),
         ) {
-            items(items, key = { "${it.type}:${it.id}" }) { item ->
-                RecentCard(item = item, onSelect = onSelect)
+            RemoteImage(
+                url = poster,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                fallbackTitle = title,
+                fallbackType = fallbackType,
+                error = { },
+            )
+        }
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(AppColors.cardGradEnd.copy(alpha = 0.86f), Color.Transparent),
+                    ),
+                ),
+        )
+        Row(
+            modifier = Modifier.matchParentSize(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(158.dp)
+                    .fillMaxHeight()
+                    .padding(16.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(AppColors.posterFallback),
+            ) {
+                RemoteImage(
+                    url = poster,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                    fallbackTitle = title,
+                    fallbackType = fallbackType,
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .width(0.dp)
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(start = 22.dp, end = 24.dp, top = 26.dp, bottom = 26.dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(accent),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = label,
+                        style = NovaType.badge.copy(color = accent, letterSpacing = 1.6.sp),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = title,
+                    style = NovaType.display.copy(color = Color.White),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(14.dp))
+                if (progress != null) {
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .width(240.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = AppColors.mint,
+                        trackColor = Color.White.copy(alpha = 0.14f),
+                        strokeCap = StrokeCap.Round,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+                // Pastilla decorativa: el héroe entero es el destino de foco y
+                // de la pulsación, así que el botón no necesita su propio foco.
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (focused) AppColors.accentBright else AppColors.accent)
+                        .border(
+                            width = 2.dp,
+                            color = if (focused) Color.White.copy(alpha = 0.9f) else Color.Transparent,
+                            shape = RoundedCornerShape(12.dp),
+                        )
+                        .padding(horizontal = 22.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (progress != null) "Reanudar" else "Ver ficha",
+                        color = Color.White,
+                        style = NovaType.subtitle.copy(fontWeight = FontWeight.W700),
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun RecentCard(item: RecentItem, onSelect: (RecentItem) -> Unit) {
+private fun QuickAccessRow(
+    totalChannels: Int,
+    totalMovies: Int,
+    totalSeries: Int,
+    continueCount: Int,
+    onSelectLive: () -> Unit,
+    onSelectMovies: () -> Unit,
+    onSelectSeries: () -> Unit,
+    onSelectContinueWatching: () -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
+        QuickAccessTile(
+            icon = Icons.Filled.LiveTv,
+            label = "Canales en Vivo",
+            subtitle = "$totalChannels canales",
+            accent = AppColors.mint,
+            onPressed = onSelectLive,
+            modifier = Modifier.weight(1f),
+        )
+        QuickAccessTile(
+            icon = Icons.Outlined.Movie,
+            label = "Películas",
+            subtitle = "$totalMovies títulos",
+            accent = AppColors.amber,
+            onPressed = onSelectMovies,
+            modifier = Modifier.weight(1f),
+        )
+        QuickAccessTile(
+            icon = Icons.Outlined.Tv,
+            label = "Series",
+            subtitle = "$totalSeries series",
+            accent = AppColors.accent,
+            onPressed = onSelectSeries,
+            modifier = Modifier.weight(1f),
+        )
+        QuickAccessTile(
+            icon = Icons.Outlined.History,
+            label = "Seguir viendo",
+            subtitle = if (continueCount > 0) "$continueCount en curso" else "nada pendiente",
+            accent = AppColors.sky,
+            onPressed = onSelectContinueWatching,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun QuickAccessTile(
+    icon: ImageVector,
+    label: String,
+    subtitle: String,
+    accent: Color,
+    onPressed: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focus = rememberTvFocus()
+    val focused = focus.focused
+    Row(
+        modifier = modifier
+            .height(86.dp)
+            .clip(NovaShapes.card)
+            .background(if (focused) accent.copy(alpha = 0.22f) else AppColors.panel)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) accent else Color.White.copy(alpha = 0.08f),
+                shape = NovaShapes.card,
+            )
+            .focusable(interactionSource = focus.interaction)
+            .tvPress(fireOnDown = true, onTap = onPressed)
+            .tvFocusScale(focused, 1.03f)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(accent.copy(alpha = if (focused) 0.28f else 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (focused) Color.White else accent,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = NovaType.cardTitle.copy(
+                    color = Color.White,
+                    fontWeight = if (focused) FontWeight.Bold else FontWeight.W600,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                style = NovaType.caption,
+                color = faintTextColor(),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** Fila con título y carrusel horizontal de tarjetas. */
+@Composable
+private fun HomeRow(
+    title: String,
+    content: LazyListScope.() -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(text = title, style = NovaType.sectionTitle.copy(color = Color.White))
+        Spacer(Modifier.height(12.dp))
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            content = content,
+        )
+    }
+}
+
+@Composable
+private fun RecentTile(
+    item: RecentItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val focus = rememberTvFocus()
     val focused = focus.focused
     val accent = if (item.type == "movie") AppColors.amber else AppColors.accent
     Column(
-        modifier = Modifier
-            .width(132.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (focused) accent.copy(alpha = 0.22f) else AppColors.panel)
+        modifier = modifier
+            .width(148.dp)
+            .clip(NovaShapes.card)
+            .background(AppColors.panel)
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = if (focused) AppColors.mint else Color.White.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(14.dp),
+                shape = NovaShapes.card,
             )
             .focusable(interactionSource = focus.interaction)
-            .tvPress(fireOnDown = true, onTap = { onSelect(item) })
-            .tvFocusScale(focused, 1.06f)
-            .padding(8.dp),
+            .tvPress(fireOnDown = true, onTap = onClick)
+            .tvFocusScale(focused, 1.06f),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(0.68f)
-                .clip(RoundedCornerShape(10.dp)),
+                .background(AppColors.posterFallback),
         ) {
             RemoteImage(
                 url = item.logo,
@@ -330,68 +695,120 @@ private fun RecentCard(item: RecentItem, onSelect: (RecentItem) -> Unit) {
                 fallbackTitle = item.title,
                 fallbackType = if (item.type == "movie") PosterType.MOVIE else PosterType.SERIES,
                 error = {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(AppColors.ink),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            if (item.type == "movie") Icons.Filled.Movie else Icons.Outlined.Tv,
-                            contentDescription = null,
-                            tint = accent,
-                            modifier = Modifier.size(34.dp),
-                        )
-                    }
+                    Icon(
+                        if (item.type == "movie") Icons.Outlined.Movie else Icons.Outlined.Tv,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(34.dp),
+                    )
                 },
             )
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(AppColors.badgeDark)
-                    .padding(horizontal = 6.dp, vertical = 3.dp),
-            ) {
-                Text(
-                    text = if (item.type == "movie") "PELÍCULA" else "SERIE",
-                    color = Color.White,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.W700,
-                )
-            }
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.58f to Color.Transparent,
+                            1f to AppColors.scrimBottom,
+                        ),
+                    ),
+            )
+            MarqueeText(
+                text = item.title,
+                style = NovaType.cardTitle.copy(color = Color.White, fontWeight = FontWeight.W700),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(10.dp),
+            )
         }
-        Spacer(Modifier.height(7.dp))
-        MarqueeText(
-            text = item.title,
-            style = TextStyle(
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.W600,
-            ),
-            modifier = Modifier.fillMaxWidth(),
+        Text(
+            text = if (item.type == "movie") "Película" else "Serie",
+            style = NovaType.caption,
+            color = accent,
+            modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 8.dp),
         )
     }
 }
 
 @Composable
-private fun LibraryStat(icon: ImageVector, value: Int, label: String, color: Color) {
-    Surface(
-        color = Color.White.copy(alpha = 0.06f),
-        shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+private fun ContinueTile(
+    progress: WatchProgress,
+    imageUrl: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focus = rememberTvFocus()
+    val focused = focus.focused
+    val done = progress.fraction >= .95
+    Column(
+        modifier = modifier
+            .width(236.dp)
+            .clip(NovaShapes.card)
+            .background(AppColors.panel)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) AppColors.mint else Color.White.copy(alpha = 0.08f),
+                shape = NovaShapes.card,
+            )
+            .focusable(interactionSource = focus.interaction)
+            .tvPress(fireOnDown = true, onTap = onClick)
+            .tvFocusScale(focused, 1.04f),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .background(AppColors.posterFallback),
         ) {
-            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(19.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(text = "$value", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.W700)
-            Spacer(Modifier.width(5.dp))
-            Text(text = label, color = faintTextColor())
+            RemoteImage(
+                url = imageUrl,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                fallbackTitle = progress.title,
+                fallbackType = if (progress.id.startsWith("movie:")) {
+                    PosterType.MOVIE
+                } else {
+                    PosterType.SERIES
+                },
+            )
+            Text(
+                text = progress.remainingLabel(),
+                style = NovaType.badge.copy(color = Color.White),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(7.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(AppColors.badgeDark)
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+            )
         }
+        Spacer(Modifier.height(8.dp))
+        MarqueeText(
+            text = progress.title,
+            style = NovaType.cardTitle.copy(color = Color.White),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp),
+        )
+        LinearProgressIndicator(
+            progress = { progress.fraction.toFloat() },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp)),
+            color = if (done) AppColors.mint else AppColors.accent,
+            trackColor = Color.White.copy(alpha = 0.10f),
+            strokeCap = StrokeCap.Round,
+        )
     }
+}
+
+private fun WatchProgress.remainingLabel(): String {
+    if (fraction >= .95) return "Completado"
+    return "${positionMs / 60_000} de ${durationMs / 60_000} min"
 }
 
 @Composable
@@ -401,89 +818,32 @@ private fun SearchActionButton(query: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(
-                if (focused) AppColors.accent else AppColors.panel,
-            )
+            .clip(NovaShapes.card)
+            .background(if (focused) AppColors.accent else AppColors.panel)
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = if (focused) Color.White.copy(alpha = 0.85f) else Color.White.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(14.dp),
+                shape = NovaShapes.card,
             )
             .focusable(interactionSource = focus.interaction)
             .tvPress(fireOnDown = true, onTap = onClick)
-            .tvFocusScale(focused, 1.015f)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .tvFocusScale(focused, 1.008f)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             Icons.Filled.Search,
             contentDescription = null,
             tint = if (focused) Color.White else AppColors.mint,
+            modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(12.dp))
         Text(
             text = query.ifEmpty { "Buscar en todo el contenido" },
             color = if (query.isEmpty()) subtleTextColor() else Color.White,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.W600,
+            style = NovaType.subtitle,
             maxLines = 1,
             modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun MenuCenterButton(
-    icon: ImageVector,
-    label: String,
-    accent: Color,
-    onPressed: () -> Unit,
-    focusRequester: FocusRequester? = null,
-    autofocus: Boolean = false,
-) {
-    val focus = rememberTvFocus()
-    val focused = focus.focused
-    Column(
-        modifier = Modifier
-            .size(width = 176.dp, height = 148.dp)
-            .shadow(if (focused) 22.dp else 0.dp, RoundedCornerShape(18.dp))
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (focused) accent.copy(alpha = 0.25f) else AppColors.panel)
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(18.dp),
-            )
-            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .focusable(interactionSource = focus.interaction)
-            .tvPress(fireOnDown = true, autofocus = autofocus, onTap = onPressed)
-            .tvFocusScale(focused, 1.05f)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        LaunchedEffect(autofocus) {
-            if (autofocus) focusRequester?.requestFocus()
-        }
-        Box(
-            modifier = Modifier
-                .size(50.dp)
-                .clip(CircleShape)
-                .background(
-                    if (focused) accent.copy(alpha = 0.30f) else accent.copy(alpha = 0.13f),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, contentDescription = null, tint = if (focused) Color.White else accent, modifier = Modifier.size(30.dp))
-        }
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = label,
-            color = Color.White,
-            fontSize = 15.sp,
-            fontWeight = if (focused) FontWeight.Bold else FontWeight.Normal,
-            textAlign = TextAlign.Center,
         )
     }
 }
@@ -498,21 +858,25 @@ private fun TvSearchDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = AppColors.panel,
+        shape = NovaShapes.tile,
         title = { Text("Buscar en tu biblioteca", color = Color.White) },
         text = {
             Column {
                 Text(
                     "Escribe lo que buscas o pulsa abajo para acceder a las acciones.",
                     color = faintTextColor(),
-                    fontSize = 13.sp,
+                    style = NovaType.meta,
                 )
                 Spacer(Modifier.height(20.dp))
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     placeholder = { Text("Canal, película o serie") },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = AppColors.mint) },
+                    leadingIcon = {
+                        Icon(Icons.Filled.Search, contentDescription = null, tint = AppColors.mint)
+                    },
                     singleLine = true,
+                    shape = NovaShapes.card,
                 )
             }
         },
@@ -528,9 +892,7 @@ private fun TvSearchDialog(
                     val q = query.trim()
                     if (q.isNotEmpty()) onSubmit(q) else onDismiss()
                 },
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = AppColors.mint,
-                ),
+                colors = ButtonDefaults.textButtonColors(contentColor = AppColors.mint),
             ) {
                 Text("Buscar", fontWeight = FontWeight.W700)
             }

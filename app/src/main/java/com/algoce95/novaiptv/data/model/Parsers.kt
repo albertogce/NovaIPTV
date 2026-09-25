@@ -14,6 +14,9 @@ import java.util.Base64
 object Parsers {
     private const val REPLACEMENT_CHAR = '\uFFFD'
 
+    /** Bajo este largo, un token sin espacios se considera título en claro. */
+    private const val MIN_BASE64_TITLE = 12
+
     fun parseId(value: Any?): Int = when (value) {
         is Number -> value.toInt()
         is String -> value.toIntOrNull() ?: 0
@@ -97,28 +100,51 @@ object Parsers {
         categoryName = firstString(obj, "category_name"),
     )
 
+    /**
+     * Los paneles Xtream traen títulos y descripciones en base64, a veces con
+     * saltos de línea (MIME) o sin el relleno `=`. El umbral de longitud protege
+     * los títulos cortos sin espacios ("Lost", "Dark", "Seinfeld"), que son
+     * secuencias base64 válidas y se corrompían al decodificarlas.
+     */
     fun cleanEpgTitle(value: Any?): String {
         if (value == null || value === JSONObject.NULL) return ""
         val str = value.toString().trim()
         if (str.isEmpty()) return ""
-        // Umbral de longitud: títulos cortos sin espacios ("Lost", "Dark",
-        // "Seinfeld") pasan el patrón base64 y se corrompían al decodificarlos.
-        val base64Like = str.length >= 12 &&
-            str.length % 4 == 0 &&
-            !str.contains(' ') &&
-            str.all { it.isLetterOrDigit() || it == '+' || it == '/' || it == '=' }
-        if (base64Like) {
-            try {
-                val decoded = String(Base64.getDecoder().decode(str), Charsets.UTF_8).trim()
-                // Solo se acepta si el resultado es texto imprimible; si sale
-                // basura binaria, el original era un título legítimo.
-                if (decoded.isNotEmpty() && decoded.none { it.isISOControl() || it == REPLACEMENT_CHAR }) return decoded
-            } catch (_: Exception) {
-                // No era base64 válido: se usa el texto tal cual.
-            }
+        val token = str.filterNot { it.isWhitespace() }
+        if (token.length < MIN_BASE64_TITLE || token.length != str.length && !str.contains('\n')) {
+            return str
         }
-        return str
+        if (!token.all { it.isLetterOrDigit() || it in "+/=-_" }) return str
+        val decoded = decodeBase64Tolerant(token) ?: return str
+        // Se acepta si el resultado es texto imprimible; si sale basura
+        // binaria, el original era un título legítimo. Los saltos de línea son
+        // normales en las descripciones, así que no cuentan como control.
+        if (decoded.isEmpty() || decoded.any {
+                it == REPLACEMENT_CHAR || (it.isISOControl() && it != '\n' && it != '\r' && it != '\t')
+            }
+        ) {
+            return str
+        }
+        return decoded.whitespaceCollapsed()
     }
+
+    /** Los párrafos del panel vienen con saltos: en una tarjeta se leen mejor en flujo. */
+    private fun String.whitespaceCollapsed(): String = replace(Regex("\\s+"), " ").trim()
+
+    /** Estándar → URL-safe, completando el relleno que falte. */
+    private fun decodeBase64Tolerant(token: String): String? {
+        val padded = token + "=".repeat((4 - token.length % 4) % 4)
+        val body = padded.dropLast(padded.count { it == '=' })
+            .padEnd(token.length + (4 - token.length % 4) % 4, 'A')
+        return runCatching {
+            String(Base64.getDecoder().decode(repad(body, padded)), Charsets.UTF_8).trim()
+        }.recoverCatching {
+            String(Base64.getUrlDecoder().decode(padded.replace('+', '-').replace('/', '_')), Charsets.UTF_8).trim()
+        }.getOrNull()
+    }
+
+    private fun repad(body: String, padded: String): String = padded
+
 
     fun parseEpgProgram(obj: JSONObject) = EpgProgram(
         title = cleanEpgTitle(

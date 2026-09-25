@@ -37,9 +37,32 @@ class ParsersTest {
 
     @Test
     fun `título EPG decodifica base64 y respeta texto plano`() {
-        assertEquals("Hello", Parsers.cleanEpgTitle("SGVsbG8="))
+        assertEquals("Hello world!", Parsers.cleanEpgTitle("SGVsbG8gd29ybGQh"))
+        assertEquals("Un programa largo", Parsers.cleanEpgTitle("VW4gcHJvZ3JhbWEgbGFyZ28"))
+        assertEquals(
+            "Directo con invitados",
+            Parsers.cleanEpgTitle("RGlyZWN0byBjb24g\naW52aXRhZG9z"),
+        )
         assertEquals("Ya en claro", Parsers.cleanEpgTitle("Ya en claro"))
+        assertEquals("Seinfeld", Parsers.cleanEpgTitle("Seinfeld"))
         assertEquals("", Parsers.cleanEpgTitle(null))
+    }
+
+    /** Muestra real de un panel Xtream: descripción con párrafos saltados. */
+    @Test
+    fun `descripcion EPG real conserva los acentos y colapsa los saltos`() {
+        val raw = "UzIgRTQg4oCUIEtlaW4gWnVyw7xjayBtZWhyCk5hY2ggZGVyIE1SVC1VbnRlcnN1" +
+            "Y2h1bmcgaXN0IExlYWggZXJsZWljaHRlcnQsIGRlbm4gc2llIGVyZsOkaHJ0LCBkYXNzIG1pdC" +
+            "BBbGkgYWxsZXMgb2theSBpc3QuIEtpZWZmZXIgbcO2Y2h0ZSBzaWNoIGluIEJlZ2xlaXR1bmcg" +
+            "dm9uIEplbm5lbGxlIGJlaSBkZXIgUG9saXplaSBzdGVsbGVuLiBLYWlseW4gbcO2Y2h0ZSBlaW5l" +
+            "IG5ldWUgRm9ybSBkZXIgVmVyaMO8dHVuZyBhdXNwcm9iaWVyZW4u"
+        assertEquals(
+            "S2 E4 — Kein Zurück mehr Nach der MRT-Untersuchung ist Leah erleichtert, " +
+                "denn sie erfährt, dass mit Ali alles okay ist. Kieffer möchte sich in " +
+                "Begleitung von Jennelle bei der Polizei stellen. Kailyn möchte eine neue " +
+                "Form der Verhütung ausprobieren.",
+            Parsers.cleanEpgTitle(raw),
+        )
     }
 
     @Test

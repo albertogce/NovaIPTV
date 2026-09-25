@@ -73,6 +73,8 @@ import com.algoce95.novaiptv.core.di.AppContainer
 import com.algoce95.novaiptv.core.di.PlayerSession
 import com.algoce95.novaiptv.core.di.QueueItem
 import com.algoce95.novaiptv.core.theme.AppColors
+import com.algoce95.novaiptv.core.theme.NovaType
+import com.algoce95.novaiptv.data.metadata.PosterType
 import com.algoce95.novaiptv.core.theme.bodyTextColor
 import com.algoce95.novaiptv.core.theme.subtleTextColor
 import com.algoce95.novaiptv.data.model.Parsers
@@ -324,7 +326,7 @@ fun SeriesDetailScreen(series: Series, initialEpisodeId: String?, onPlay: () -> 
                                     headerCompact = true
                                     scope.launch { focusFirstEpisode() }
                                 },
-                                label = { Text("T$season") },
+                                label = { Text("Temporada $season") },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = AppColors.accent,
                                     containerColor = AppColors.focusFill,
@@ -460,8 +462,8 @@ private fun SeriesHeader(series: Series, plot: String, lastEpisodeTitle: String?
         Box(
             modifier = Modifier
                 .size(
-                    width = if (compact) 72.dp else 140.dp,
-                    height = if (compact) 102.dp else 198.dp,
+                    width = if (compact) 76.dp else 168.dp,
+                    height = if (compact) 108.dp else 236.dp,
                 )
                 .clip(RoundedCornerShape(13.dp))
                 .background(Color.Black.copy(alpha = 0.45f)),
@@ -471,18 +473,19 @@ private fun SeriesHeader(series: Series, plot: String, lastEpisodeTitle: String?
                 url = series.logo,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
+                fallbackTitle = series.title,
+                fallbackType = PosterType.SERIES,
                 error = {
                     Icon(Icons.Filled.Tv, contentDescription = null, tint = AppColors.amber, modifier = Modifier.size(48.dp))
                 },
             )
         }
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(18.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = series.title,
                 color = Color.White,
-                fontSize = if (compact) 17.sp else 24.sp,
-                fontWeight = FontWeight.W800,
+                style = if (compact) NovaType.title else NovaType.display,
                 maxLines = if (compact) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -513,7 +516,7 @@ private fun SeriesHeader(series: Series, plot: String, lastEpisodeTitle: String?
                     Text(
                         text = "Último visto: $lastEpisodeTitle",
                         color = Color.White,
-                        fontSize = 12.sp,
+                        style = NovaType.meta,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
@@ -524,10 +527,9 @@ private fun SeriesHeader(series: Series, plot: String, lastEpisodeTitle: String?
             if (!compact) {
                 Text(
                     text = plot,
+                    style = NovaType.body,
                     color = bodyTextColor(),
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    maxLines = 5,
+                    maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -576,7 +578,7 @@ private fun EpisodeCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(150.dp)
+            .height(168.dp)
             .clip(TvFocusShape)
             .background(if (focused) AppColors.episodeFocus else AppColors.panel)
             .border(
@@ -607,7 +609,7 @@ private fun EpisodeCard(
     ) {
         Box(
             modifier = Modifier
-                .width(150.dp)
+                .width(184.dp)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(topStart = 7.dp, bottomStart = 7.dp))
                 .background(AppColors.thumbPlaceholder),
@@ -619,9 +621,18 @@ private fun EpisodeCard(
                 modifier = Modifier.fillMaxSize(),
                 error = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Filled.Movie, contentDescription = null, tint = Color.White.copy(alpha = 0.14f), modifier = Modifier.size(28.dp))
+                        Icon(
+                            Icons.Filled.Movie,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.14f),
+                            modifier = Modifier.size(28.dp),
+                        )
                         if (epNum.isNotEmpty()) {
-                            Text(text = "Ep. $epNum", color = Color.White.copy(alpha = 0.22f), fontSize = 10.sp)
+                            Text(
+                                text = "Ep. $epNum",
+                                color = Color.White.copy(alpha = 0.30f),
+                                style = NovaType.caption,
+                            )
                         }
                     }
                 },
@@ -630,52 +641,53 @@ private fun EpisodeCard(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isLastWatched) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = AppColors.amber, modifier = Modifier
-                        .padding(end = 4.dp)
-                        .size(14.dp))
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = AppColors.amber,
+                        modifier = Modifier
+                            .padding(end = 5.dp)
+                            .size(15.dp),
+                    )
                 }
                 Text(
                     text = if (epNum.isNotEmpty()) "$epNum. $episodeTitle" else episodeTitle,
                     color = if (isLastWatched) AppColors.amber else Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = NovaType.subtitle,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
             }
             if (plot.isNotEmpty()) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(5.dp))
                 Text(
                     text = plot,
+                    style = NovaType.meta.copy(lineHeight = 16.sp),
                     color = subtleTextColor(),
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
             if (isLastWatched) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Último visualizado",
-                    color = AppColors.amber,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
+                    text = "ÚLTIMO VISUALIZADO",
+                    style = NovaType.badge.copy(color = AppColors.amber),
                 )
             }
         }
         Icon(
             Icons.Filled.PlayCircleOutline,
             contentDescription = null,
-            tint = if (focused) AppColors.accent else Color.White.copy(alpha = 0.14f),
+            tint = if (focused) AppColors.accent else Color.White.copy(alpha = 0.20f),
             modifier = Modifier
-                .padding(end = 8.dp)
-                    .size(24.dp),
+                .padding(end = 10.dp)
+                    .size(26.dp),
         )
     }
 }

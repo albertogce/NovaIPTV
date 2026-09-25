@@ -14,14 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,24 +30,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.algoce95.novaiptv.presentation.tv.NovaButton
 import com.algoce95.novaiptv.presentation.tv.RemoteImage
 import com.algoce95.novaiptv.presentation.tv.tvFocusScale
 import com.algoce95.novaiptv.core.di.AppContainer
 import com.algoce95.novaiptv.core.di.PlayerSession
 import com.algoce95.novaiptv.core.di.QueueItem
 import com.algoce95.novaiptv.core.theme.AppColors
+import com.algoce95.novaiptv.core.theme.NovaShapes
+import com.algoce95.novaiptv.core.theme.NovaType
 import com.algoce95.novaiptv.core.theme.bodyTextColor
+import com.algoce95.novaiptv.core.theme.subtleTextColor
 import com.algoce95.novaiptv.data.model.VodMovie
 import com.algoce95.novaiptv.data.metadata.PosterType
 import com.algoce95.novaiptv.presentation.tv.rememberTvFocus
@@ -111,104 +111,99 @@ fun MovieDetailScreen(movie: VodMovie, onPlay: () -> Unit) {
     val director = info?.opt("director")?.toString().orEmpty()
 
     Surface(modifier = Modifier.fillMaxSize(), color = AppColors.ink) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-        ) {
-            Row {
-                Box(
-                    modifier = Modifier
-                        .size(width = 220.dp, height = 320.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(AppColors.posterSurface),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    RemoteImage(
-                        url = movie.logo,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                        fallbackTitle = movie.title,
-                        fallbackType = PosterType.MOVIE,
-                        error = {
-                            Icon(Icons.Filled.Movie, contentDescription = null, tint = AppColors.amber, modifier = Modifier.size(80.dp))
-                        },
-                    )
-                }
-                Spacer(Modifier.width(28.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = movie.title,
-                        color = Color.White,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (movie.year > 0) MetaChip("${movie.year}")
-                        if (genre.isNotEmpty()) MetaChip(genre)
-                        if (rating.isNotEmpty()) MetaChip(rating, withStar = true)
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    if (director.isNotEmpty()) {
-                        Text(text = "Director: $director", color = bodyTextColor(), fontSize = 14.sp)
-                        Spacer(Modifier.height(12.dp))
-                    }
-                    Text(
-                        text = plot,
-                        color = bodyTextColor(),
-                        fontSize = 15.sp,
-                        lineHeight = 21.sp,
-                    )
-                    Spacer(Modifier.height(28.dp))
-                    val playFocusState = rememberTvFocus()
-                    val playFocused = playFocusState.focused
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Arte ambiental de fondo, tenido bajo el velo: la ficha se lee
+            // como el contenido, no como un formulario sobre negro.
+            Box(modifier = Modifier.fillMaxSize().alpha(0.22f)) {
+                RemoteImage(
+                    url = movie.logo,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                    fallbackTitle = movie.title,
+                    fallbackType = PosterType.MOVIE,
+                    error = { },
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to AppColors.ink.copy(alpha = 0.72f),
+                            0.45f to AppColors.ink.copy(alpha = 0.92f),
+                            1f to AppColors.ink,
+                        ),
+                    ),
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(28.dp),
+            ) {
+                Row {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(
-                                2.dp,
-                                if (playFocused) Color.White else Color.Transparent,
-                                RoundedCornerShape(8.dp),
-                            )
-                            .then(
-                                if (playFocused) {
-                                    Modifier.shadow(
-                                        16.dp,
-                                        RoundedCornerShape(8.dp),
-                                        ambientColor = AppColors.pink.copy(alpha = 0.5f),
-                                        spotColor = AppColors.pink.copy(alpha = 0.5f),
-                                    )
-                                } else {
-                                    Modifier
-                                },
-                            )
-                            .focusRequester(playFocus)
-                            .focusable(interactionSource = playFocusState.interaction)
-                            .tvPress(fireOnDown = true, onTap = ::play)
-                            .tvFocusScale(playFocused, 1.04f),
+                            .size(width = 236.dp, height = 344.dp)
+                            .shadow(18.dp, NovaShapes.tile)
+                            .clip(NovaShapes.tile)
+                            .background(AppColors.posterSurface),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Button(
-                            onClick = ::play,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (playFocused) AppColors.salmon else AppColors.movieButtonDark,
-                                contentColor = Color.White,
-                            ),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier
-                                .focusProperties { canFocus = false }
-                                .padding(horizontal = 28.dp, vertical = 16.dp),
-                        ) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = "REPRODUCIR PELÍCULA",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
+                        RemoteImage(
+                            url = movie.logo,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                            fallbackTitle = movie.title,
+                            fallbackType = PosterType.MOVIE,
+                            error = {
+                                Icon(
+                                    Icons.Filled.Movie,
+                                    contentDescription = null,
+                                    tint = AppColors.amber,
+                                    modifier = Modifier.size(80.dp),
+                                )
+                            },
+                        )
+                    }
+                    Spacer(Modifier.width(30.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = movie.title,
+                            style = NovaType.display.copy(color = Color.White),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (movie.year > 0) MetaChip("${movie.year}")
+                            if (genre.isNotEmpty()) MetaChip(genre)
+                            if (rating.isNotEmpty()) MetaChip(rating, withStar = true)
                         }
+                        Spacer(Modifier.height(18.dp))
+                        if (director.isNotEmpty()) {
+                            Text(
+                                text = "Director: $director",
+                                style = NovaType.body,
+                                color = subtleTextColor(),
+                            )
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        Text(
+                            text = plot,
+                            style = NovaType.body.copy(lineHeight = 22.sp),
+                            color = bodyTextColor(),
+                        )
+                        Spacer(Modifier.height(30.dp))
+                        val playFocusState = rememberTvFocus()
+                        NovaButton(
+                            label = "Reproducir película",
+                            icon = Icons.Filled.PlayArrow,
+                            onClick = ::play,
+                            modifier = Modifier
+                                .focusRequester(playFocus)
+                                .focusable(interactionSource = playFocusState.interaction)
+                                .tvPress(fireOnDown = true, onTap = ::play)
+                                .tvFocusScale(playFocusState.focused, 1.04f),
+                        )
                     }
                 }
             }
@@ -218,19 +213,23 @@ fun MovieDetailScreen(movie: VodMovie, onPlay: () -> Unit) {
 
 @Composable
 private fun MetaChip(text: String, withStar: Boolean = false) {
-    Surface(
-        color = Color.White.copy(alpha = 0.12f),
-        shape = RoundedCornerShape(50),
+    Row(
+        modifier = Modifier
+            .clip(NovaShapes.pill)
+            .background(Color.White.copy(alpha = 0.10f))
+            .border(1.dp, Color.White.copy(alpha = 0.14f), NovaShapes.pill)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (withStar) {
-                Icon(Icons.Filled.Star, contentDescription = null, tint = AppColors.amber, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-            }
-            Text(text = text, color = Color.White)
+        if (withStar) {
+            Icon(
+                Icons.Filled.Star,
+                contentDescription = null,
+                tint = AppColors.amber,
+                modifier = Modifier.size(15.dp),
+            )
+            Spacer(Modifier.width(4.dp))
         }
+        Text(text = text, style = NovaType.meta.copy(color = Color.White))
     }
 }

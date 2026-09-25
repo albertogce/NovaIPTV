@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material3.Icon
@@ -18,10 +20,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.ImageLoader
@@ -123,6 +127,34 @@ fun RemoteImage(
     }
 }
 
+/**
+ * Logotipo de canal: la imagen del panel si existe; si no, las iniciales sobre
+ * una pastilla. Repetir el mismo icono de TV hacía la lista ilegible.
+ */
+@Composable
+fun ChannelLogo(
+    url: String,
+    name: String,
+    modifier: Modifier = Modifier,
+    corner: Dp = 10.dp,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(corner))
+            .background(AppColors.posterFallback),
+        contentAlignment = Alignment.Center,
+    ) {
+        RemoteImage(
+            url = url,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize().padding(4.dp),
+            error = {
+                InitialsFallback(title = name)
+            },
+        )
+    }
+}
+
 /** Iniciales del título sobre el color de fallback: sustituye al icono roto. */
 @Composable
 fun InitialsFallback(title: String?, modifier: Modifier = Modifier) {
@@ -141,8 +173,8 @@ fun InitialsFallback(title: String?, modifier: Modifier = Modifier) {
         if (initials.isNotEmpty()) {
             Text(
                 text = initials,
-                color = Color.White.copy(alpha = 0.55f),
-                fontSize = 22.sp,
+                color = Color.White.copy(alpha = 0.62f),
+                fontSize = 20.sp,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.W700,
             )
         } else {

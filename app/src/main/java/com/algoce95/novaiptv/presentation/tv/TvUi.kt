@@ -371,7 +371,7 @@ fun NovaButton(
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(if (focused) AppColors.salmon else AppColors.accent)
+            .background(if (focused) AppColors.accentBright else AppColors.accent)
             .border(2.dp, Color.White.copy(alpha = if (focused) 0.9f else 0f), RoundedCornerShape(12.dp))
             .focusable(interactionSource = focus.interaction)
             .tvPress(fireOnDown = true, onTap = onClick)

@@ -57,7 +57,9 @@ import com.algoce95.novaiptv.presentation.tv.NovaButton
 import com.algoce95.novaiptv.presentation.tv.RemoteImage
 import com.algoce95.novaiptv.presentation.tv.TvFocusShape
 import com.algoce95.novaiptv.core.theme.AppColors
+import com.algoce95.novaiptv.core.theme.NovaType
 import com.algoce95.novaiptv.core.theme.bodyTextColor
+import com.algoce95.novaiptv.presentation.tv.InitialsFallback
 import com.algoce95.novaiptv.core.theme.subtleTextColor
 import com.algoce95.novaiptv.data.model.LiveChannel
 import com.algoce95.novaiptv.data.model.WatchProgress
@@ -127,48 +129,41 @@ fun HistoryView(
 
 @Composable
 private fun HistoryCard(entry: HistoryEntry) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            RemoteImage(
-                url = entry.logo,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                fallbackTitle = entry.title,
-                fallbackType = if (entry.type == "movie") PosterType.MOVIE else PosterType.SERIES,
-                error = {
-                    Icon(
-                        if (entry.type == "movie") Icons.Filled.Movie else Icons.Outlined.Tv,
-                        contentDescription = null,
-                        tint = AppColors.amber,
-                    )
-                },
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(7.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(AppColors.badgeDark)
-                    .padding(horizontal = 7.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    text = if (entry.type == "movie") "PELÍCULA" else "SERIE",
-                    color = bodyTextColor(),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.W700,
-                )
-            }
-        }
+    // Mismo lenguaje visual que la rejilla del catálogo: arte completo y título
+    // apoyado sobre un velo degradado.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(AppColors.posterFallback),
+    ) {
+        RemoteImage(
+            url = entry.logo,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+            fallbackTitle = entry.title,
+            fallbackType = if (entry.type == "movie") PosterType.MOVIE else PosterType.SERIES,
+            error = {
+                InitialsFallback(title = entry.title)
+            },
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.58f to Color.Transparent,
+                        1f to AppColors.scrimBottom,
+                    ),
+                ),
+        )
         MarqueeText(
             text = entry.title,
-            style = TextStyle(
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.W600,
-            ),
+            style = NovaType.cardTitle.copy(color = Color.White, fontWeight = FontWeight.W700),
             modifier = Modifier
+                .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(7.dp),
+                .padding(10.dp),
         )
     }
 }
@@ -370,12 +365,7 @@ private fun ContinueWatchingCard(
                         PosterType.SERIES
                     },
                     error = {
-                        Icon(
-                            Icons.Filled.Movie,
-                            contentDescription = null,
-                            tint = subtleTextColor(),
-                            modifier = Modifier.size(52.dp),
-                        )
+                        InitialsFallback(title = progress.title)
                     },
                 )
             }

@@ -1,6 +1,8 @@
 package com.algoce95.novaiptv.presentation.auth
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -97,27 +100,50 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Image(
-                painter = painterResource(R.drawable.app_logo),
-                contentDescription = null,
-                modifier = Modifier.size(82.dp),
-            )
-            Spacer(Modifier.height(14.dp))
-            Text(
-                text = "NOVA IPTV",
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth(fraction = 0.7f)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(
+                        androidx.compose.ui.graphics.Brush.linearGradient(
+                            listOf(AppColors.cardGradStart, AppColors.cardGradEnd),
+                        ),
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
+                    .padding(horizontal = 28.dp, vertical = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    painter = painterResource(R.drawable.app_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(58.dp),
+                )
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text(
+                        text = "NOVA IPTV",
                         color = Color.White,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.W800,
-                letterSpacing = 1.1.sp,
-            )
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.W800,
+                        letterSpacing = 1.1.sp,
+                    )
+                    Text(
+                        text = "Acceso al panel Xtream",
+                        color = AppColors.mutedLabel,
+                        fontSize = 13.sp,
+                    )
+                }
+            }
             Spacer(Modifier.height(26.dp))
             OutlinedTextField(
                 value = server,
                 onValueChange = { server = it },
                 label = { Text("Servidor URL") },
                 singleLine = true,
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
-                    .fillMaxWidth(fraction = 0.7f)
+                    .fillMaxWidth()
                     .focusRequester(serverFocus),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { userFocus.requestFocus() }),
@@ -133,8 +159,9 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
                 onValueChange = { username = it },
                 label = { Text("Usuario") },
                 singleLine = true,
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
-                    .fillMaxWidth(fraction = 0.7f)
+                    .fillMaxWidth()
                     .focusRequester(userFocus),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { passFocus.requestFocus() }),
@@ -150,9 +177,10 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
                 onValueChange = { password = it },
                 label = { Text("Contraseña") },
                 singleLine = true,
+                shape = RoundedCornerShape(12.dp),
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier
-                    .fillMaxWidth(fraction = 0.7f)
+                    .fillMaxWidth()
                     .focusRequester(passFocus),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { submit() }),
@@ -168,7 +196,7 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
                     text = (authState as AuthUiState.Error).message,
                     color = AppColors.expired,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(fraction = 0.7f),
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(12.dp))
             }
@@ -182,19 +210,22 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
                     contentColor = Color.White,
                 ),
                 contentPadding = PaddingValues(horizontal = 36.dp, vertical = 14.dp),
-                modifier = Modifier.focusRequester(buttonFocus),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(buttonFocus),
             ) {
                 if (loading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                color = Color.White,
+                        color = Color.White,
                     )
                     Spacer(Modifier.width(12.dp))
-                    Text("CONECTANDO...")
+                    Text("Conectando...", fontWeight = FontWeight.W700)
                 } else {
-                    Text("CONECTAR")
+                    Text("Conectar", fontWeight = FontWeight.W700)
                 }
+            }
             }
         }
     }

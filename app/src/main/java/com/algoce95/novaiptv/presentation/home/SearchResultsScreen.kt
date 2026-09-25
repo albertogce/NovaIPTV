@@ -48,6 +48,8 @@ import com.algoce95.novaiptv.core.di.AppContainer
 import com.algoce95.novaiptv.core.di.PlayerSession
 import com.algoce95.novaiptv.core.di.QueueItem
 import com.algoce95.novaiptv.core.theme.AppColors
+import com.algoce95.novaiptv.core.theme.NovaType
+import com.algoce95.novaiptv.presentation.tv.ChannelLogo
 import com.algoce95.novaiptv.core.theme.faintTextColor
 import com.algoce95.novaiptv.core.theme.subtleTextColor
 import com.algoce95.novaiptv.data.model.LiveChannel
@@ -195,9 +197,9 @@ private fun ResultSectionTitle(title: String, icon: ImageVector) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(vertical = 12.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = AppColors.pink, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, tint = AppColors.sky, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
-        Text(text = title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text(text = title, color = Color.White, style = NovaType.sectionTitle)
     }
 }
 
@@ -213,9 +215,17 @@ private fun ResultTile(
     val focused = focus.focused
     ListItem(
         headlineContent = {
-            Text(text = title, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = title,
+                style = NovaType.subtitle,
+                color = Color.White,
+                maxLines = 2,
+                lineHeight = 19.sp,
+            )
         },
-        supportingContent = subtitle?.let { { Text(text = it, color = subtleTextColor(), fontSize = 12.sp) } },
+        supportingContent = subtitle?.let {
+            { Text(text = it, style = NovaType.meta, color = subtleTextColor()) }
+        },
         leadingContent = {
             Box(
                 modifier = Modifier
@@ -249,13 +259,11 @@ private fun ResultTile(
 
 @Composable
 private fun ChannelThumb(channel: LiveChannel) {
-    RemoteImage(
+    ChannelLogo(
         url = channel.channelLogo,
-        contentScale = ContentScale.Fit,
-        modifier = Modifier.size(width = 40.dp, height = 40.dp),
-        error = {
-            Icon(Icons.Filled.LiveTv, contentDescription = null, tint = subtleTextColor(), modifier = Modifier.size(32.dp))
-        },
+        name = channel.channelName,
+        modifier = Modifier.size(width = 44.dp, height = 44.dp),
+        corner = 6.dp,
     )
 }
 

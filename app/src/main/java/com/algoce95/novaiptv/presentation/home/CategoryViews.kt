@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.withFrameNanos
 import com.algoce95.novaiptv.core.theme.AppColors
+import com.algoce95.novaiptv.core.theme.NovaType
 import com.algoce95.novaiptv.core.theme.bodyTextColor
 import com.algoce95.novaiptv.core.theme.faintTextColor
 import com.algoce95.novaiptv.core.theme.subtleTextColor
@@ -96,7 +97,9 @@ import com.algoce95.novaiptv.data.api.XtreamApiClient
 import com.algoce95.novaiptv.data.model.LiveChannel
 import com.algoce95.novaiptv.data.model.LiveCategory
 import com.algoce95.novaiptv.data.metadata.PosterType
+import com.algoce95.novaiptv.presentation.tv.ChannelLogo
 import com.algoce95.novaiptv.presentation.tv.EmptyState
+import com.algoce95.novaiptv.presentation.tv.InitialsFallback
 import com.algoce95.novaiptv.presentation.tv.MarqueeText
 import com.algoce95.novaiptv.presentation.tv.NovaButton
 import com.algoce95.novaiptv.presentation.tv.RemoteImage
@@ -350,7 +353,9 @@ private fun <C> CategorySidebar(
     onFocused: (String) -> Unit,
     onExitRight: () -> Unit,
 ) {
-    val width = if (LocalConfiguration.current.screenWidthDp < 700) 148.dp else 210.dp
+    // Suficiente para el nombre completo en dos líneas: los recortes se leían
+    // como contenido roto.
+    val width = if (LocalConfiguration.current.screenWidthDp < 700) 180.dp else 268.dp
     LazyColumn(
         state = state,
         modifier = Modifier
@@ -418,7 +423,7 @@ private fun <C> CategorySidebar(
                     contentDescription = null,
                     tint = when {
                         hasFocus -> AppColors.mint
-                        selected -> AppColors.salmon
+                        selected -> AppColors.accentBright
                         else -> AppColors.mutedLabel
                     },
                     modifier = Modifier.size(17.dp),
@@ -426,10 +431,10 @@ private fun <C> CategorySidebar(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = getCatName(category),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 2,
+                    lineHeight = 16.sp,
                     color = if (hasFocus) Color.White else if (selected) AppColors.dimText else bodyTextColor(),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = if (selected) FontWeight.W700 else FontWeight.W500,
                     modifier = Modifier.weight(1f),
                 )
@@ -867,7 +872,7 @@ fun LiveChannelBrowser(
                     }
                     .tvFocusScale(hasFocus, 1.03f)
                     .padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    RemoteImage(channel.channelLogo, Modifier.size(58.dp), ContentScale.Fit, error = { Icon(Icons.Filled.LiveTv, null, tint = bodyTextColor()) })
+                    ChannelLogo(channel.channelLogo, channel.channelName, Modifier.size(58.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         MarqueeText(
@@ -913,28 +918,22 @@ fun LiveChannelBrowser(
                     modifier = Modifier.fillMaxSize()
                 )
                 if (sel == null) {
-                    Box(Modifier.fillMaxSize().background(AppColors.ink), contentAlignment = Alignment.Center) {
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(AppColors.panel.copy(alpha = 0.92f))
-                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 18.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                Icons.Filled.PlayCircleOutline,
-                                contentDescription = null,
-                                tint = AppColors.mint,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                "Pulsa Enter sobre un canal para previsualizarlo",
-                                color = subtleTextColor(),
-                                fontSize = 13.sp,
-                            )
-                        }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(AppColors.tileHeader, AppColors.ink),
+                                ),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        EmptyState(
+                            icon = Icons.Filled.PlayCircleOutline,
+                            title = "Sin canal previsualizado",
+                            hint = "Pulsa OK sobre un canal de la lista para verlo aquí.",
+                            iconTint = AppColors.mint.copy(alpha = 0.5f),
+                        )
                     }
                 } else {
                     // Cabecera del canal integrada sobre el vídeo: logo + nombre
@@ -949,15 +948,12 @@ fun LiveChannelBrowser(
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.White.copy(alpha = 0.06f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            RemoteImage(sel.channelLogo, Modifier.size(34.dp), ContentScale.Fit, error = { })
-                        }
+                        ChannelLogo(
+                            url = sel.channelLogo,
+                            name = sel.channelName,
+                            modifier = Modifier.size(42.dp),
+                            corner = 8.dp,
+                        )
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -1036,7 +1032,12 @@ private fun LiveStartSuggestions(
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RemoteImage(channel.channelLogo, Modifier.size(34.dp), ContentScale.Fit, error = { Icon(Icons.Filled.LiveTv, null, tint = bodyTextColor(), modifier = Modifier.size(20.dp)) })
+                    ChannelLogo(
+                        url = channel.channelLogo,
+                        name = channel.channelName,
+                        modifier = Modifier.size(36.dp),
+                        corner = 8.dp,
+                    )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         channel.channelName,
@@ -1193,10 +1194,8 @@ fun LiveChannelCard(channel: LiveChannel, client: XtreamApiClient) {
                     .padding(8.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(
-                        Brush.linearGradient(
-                            colors = listOf(AppColors.cardGradStart, AppColors.cardGradEnd),
-                            start = Offset.Zero,
-                            end = Offset.Infinite,
+                        Brush.verticalGradient(
+                            listOf(AppColors.posterFallback, AppColors.tileHeader),
                         ),
                     )
                     .padding(12.dp),
@@ -1206,26 +1205,14 @@ fun LiveChannelCard(channel: LiveChannel, client: XtreamApiClient) {
                     url = channel.channelLogo,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),
-                    loading = {
-                        ShimmerBox(modifier = Modifier.fillMaxSize())
-                    },
                     error = {
-                        Icon(
-                            Icons.Filled.LiveTv,
-                            contentDescription = null,
-                            tint = bodyTextColor(),
-                            modifier = Modifier.size(38.dp),
-                        )
+                        InitialsFallback(title = channel.channelName)
                     },
                 )
             }
             MarqueeText(
                 text = channel.channelName,
-                style = TextStyle(
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                ),
+                style = NovaType.cardTitle.copy(color = Color.White, fontWeight = FontWeight.Bold),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp),
@@ -1271,67 +1258,61 @@ fun LiveChannelCard(channel: LiveChannel, client: XtreamApiClient) {
     }
 }
 
-/** Póster de película/serie (paridad con `_PosterContent`). */
+/**
+ * Póster de película/serie: el arte ocupa toda la tarjeta y el título se apoya
+ * sobre un velo degradado, así la rejilla se lee como una pared de carátulas.
+ * [metadata] solo se muestra cuando aporta algo (el año); repetir "Película" o
+ * "Serie" en cada tarjeta era ruido.
+ */
 @Composable
 fun PosterCard(
     title: String,
     imageUrl: String,
-    icon: ImageVector,
     metadata: String,
     accent: Color,
     fallbackType: PosterType = PosterType.MOVIE,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Box(modifier = Modifier.fillMaxWidth().aspectRatio(0.68f)) {
-            RemoteImage(
-                url = imageUrl,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                fallbackTitle = title,
-                fallbackType = fallbackType,
-                error = {
-                    PosterFallback(icon = icon)
-                },
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(0.68f)
+            .background(AppColors.posterFallback),
+    ) {
+        RemoteImage(
+            url = imageUrl,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+            fallbackTitle = title,
+            fallbackType = fallbackType,
+            error = {
+                InitialsFallback(title = title)
+            },
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.55f to Color.Transparent,
+                        1f to AppColors.scrimBottom,
+                    ),
+                ),
+        )
+        Column(modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)) {
+            MarqueeText(
+                text = title,
+                style = NovaType.cardTitle.copy(color = Color.White, fontWeight = FontWeight.W700),
+                modifier = Modifier.fillMaxWidth(),
             )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(8.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(AppColors.badgeScrim)
-                    .border(1.dp, accent.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 7.dp, vertical = 4.dp),
-            ) {
+            if (metadata.isNotEmpty()) {
                 Text(
                     text = metadata,
+                    style = NovaType.badge,
                     color = accent,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.W700,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
-        MarqueeText(
-            text = title,
-            style = TextStyle(
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.W700,
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 9.dp, end = 9.dp, top = 8.dp, bottom = 9.dp),
-        )
-    }
-}
-
-@Composable
-private fun PosterFallback(icon: ImageVector) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(AppColors.posterFallback),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = null, tint = faintTextColor(), modifier = Modifier.size(42.dp))
     }
 }
