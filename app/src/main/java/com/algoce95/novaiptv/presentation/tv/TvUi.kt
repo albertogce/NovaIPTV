@@ -387,6 +387,15 @@ fun NovaButton(
 ) {
     val focus = rememberTvFocus()
     val focused = focus.focused
+    // Nodo propio para cuando el llamante no dirige el foco: sin él no habría a
+    // quién pedírselo en el autofocus.
+    val internalFocus = remember { FocusRequester() }
+    // `tvPress(autofocus)` solo blinda la primera pulsación, no pide el foco;
+    // sin esto un NovaButton con autofocus se quedaba sin ningún destino al que
+    // llegar con el mando.
+    LaunchedEffect(autofocus) {
+        if (autofocus) (focusRequester ?: internalFocus).requestFocusReady()
+    }
     val focusProps = if (leftFocus != null || downFocus != null) {
         Modifier.focusProperties {
             leftFocus?.let { left = it }
@@ -399,8 +408,18 @@ fun NovaButton(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(if (focused) AppColors.accentBright else AppColors.accent)
-            .border(2.dp, Color.White.copy(alpha = if (focused) 0.9f else 0f), RoundedCornerShape(12.dp))
-            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .border(
+                width = if (focused) 3.dp else 2.dp,
+                color = if (focused) AppColors.mint else Color.Transparent,
+                shape = RoundedCornerShape(12.dp),
+            )
+            .then(
+                if (focusRequester != null) {
+                    Modifier.focusRequester(focusRequester)
+                } else {
+                    Modifier.focusRequester(internalFocus)
+                },
+            )
             .then(focusProps)
             .focusable(interactionSource = focus.interaction)
             .tvPress(fireOnDown = true, autofocus = autofocus, onTap = onClick)

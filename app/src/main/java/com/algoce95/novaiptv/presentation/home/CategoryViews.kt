@@ -474,6 +474,12 @@ fun <T> GridContentView(
     onColorKey: ((Int) -> Boolean)? = null,
     skipAutoFocus: () -> Boolean = { false },
     header: (@Composable () -> Unit)? = null,
+    /**
+     * Foco de la cabecera. La búsqueda por defecto descarta un botón de cabecera
+     * situado muy a la derecha de la tarjeta enfocada, así que el escalón
+     * arriba se enlaza a mano.
+     */
+    headerFocus: FocusRequester? = null,
 ) {
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
@@ -620,6 +626,17 @@ fun <T> GridContentView(
                                     }
                                 }
                                 when (event.key) {
+                                    // Arriba desde la primera fila de tarjetas: el
+                                    // buscador de foco descarta un botón de cabecera
+                                    // situado muy a la derecha, así que se pide a mano.
+                                    Key.DirectionUp -> {
+                                        if (headerFocus != null && index < cols) {
+                                            headerFocus.requestFocus()
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    }
                                     Key.DirectionLeft -> {
                                         if (isLeftEdge) {
                                             onAtLeftEdge?.invoke()
@@ -699,6 +716,8 @@ fun LiveChannelBrowser(
     /** Solo en la categoría de favoritos: mover aquí reordena esa lista. */
     onMoveItem: ((LiveChannel, Int) -> Unit)?,
     favoriteChannels: List<LiveChannel>,
+    /** Canal donde aterrizar al abrir Directo; nulo = comportamiento de siempre. */
+    resumeChannelId: Int? = null,
 ) {
     val channelFocuses = remember { mutableStateMapOf<Int, FocusRequester>() }
     val categoryFocus = remember { mutableStateMapOf<String, FocusRequester>() }
@@ -712,7 +731,10 @@ fun LiveChannelBrowser(
     val context = LocalContext.current
     // El id previsualizado sobrevive a la navegación: al abrir la pantalla
     // completa se toma el reproductor de LivePreview y al volver se reanuda.
-    var previewedId by remember { mutableStateOf(LivePreview.channelId) }
+    // El canal de reanudación es un único intento: aplicado o con la categoría
+    // ya cambiada, no debe repetirse.
+    var pendingResumeId by remember { mutableStateOf(resumeChannelId) }
+    var previewedId by remember { mutableStateOf(LivePreview.channelId ?: pendingResumeId) }
     val selected = remember(previewedId, items) {
         items.firstOrNull { it.channelId == previewedId }
             ?: LivePreview.channel?.takeIf { it.channelId == previewedId }
@@ -744,22 +766,32 @@ fun LiveChannelBrowser(
         }
     }
 
-    val requestChannelFocus: () -> Unit = {
+    // [preferredId] permite aterrizar en el canal reanudado; si ya no está en
+    // la lista (categoría oculta, filtro de búsqueda) se cae al primero.
+    fun requestChannelFocus(preferredId: Int? = null) {
         sidebarFocusedId = null
         focusScope.launch {
-            val firstChannel = items.firstOrNull() ?: return@launch
-            channelListState.scrollToItem(0)
-            channelFocuses.getOrPut(firstChannel.channelId) { FocusRequester() }
+            val target = items.firstOrNull { it.channelId == preferredId }
+                ?: items.firstOrNull() ?: return@launch
+            channelListState.scrollToItem(items.indexOf(target))
+            channelFocuses.getOrPut(target.channelId) { FocusRequester() }
                 .requestFocusReady()
         }
     }
 
-    LaunchedEffect(selectedCategoryId) {
+    // La lista entra vacía en la primera pasada de una categoría; si el intento
+    // de reanudación se consume ahí, se pierde. `itemsLoaded` relanza el efecto
+    // cuando el catálogo ya está resuelto.
+    val itemsLoaded = items.isNotEmpty()
+    LaunchedEffect(selectedCategoryId, itemsLoaded) {
         // Volviendo de la pantalla completa se conserva el canal previsualizado.
         if (LivePreview.consumeRestore()) return@LaunchedEffect
-        previewedId = null
+        val resume = pendingResumeId
+        if (resume != null && !itemsLoaded) return@LaunchedEffect
+        if (resume != null) pendingResumeId = null
+        previewedId = resume?.takeIf { id -> items.any { it.channelId == id } }
         if (items.isNotEmpty() && sidebarFocusedId == null) {
-            requestChannelFocus()
+            requestChannelFocus(previewedId)
         }
     }
 

@@ -34,6 +34,10 @@ class PrefsStore private constructor(private val context: Context) {
         const val FAVORITE_CHANNELS = "favorite_channels"
         const val WATCH_HISTORY = "watch_history"
         const val WATCH_PROGRESS = "watch_progress_v1"
+
+        // Último canal abierto: Directo arranca ahí en vez del primero de la
+        // categoría.
+        const val LAST_LIVE_CHANNEL = "last_live_channel"
         const val ACCOUNT_EXP_DATE = "account_exp_date"
         const val AUTO_REFRESH_DAYS = "settings_auto_refresh_days"
         const val AUTO_REFRESH_MINUTES = "settings_auto_refresh_minutes"

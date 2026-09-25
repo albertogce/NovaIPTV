@@ -23,10 +23,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.SignalWifiOff
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -78,9 +81,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -90,13 +96,16 @@ import androidx.media3.ui.PlayerView
 import com.algoce95.novaiptv.core.di.AppContainer
 import com.algoce95.novaiptv.core.playback.LivePreview
 import com.algoce95.novaiptv.core.playback.bindSharedSurface
+import com.algoce95.novaiptv.core.storage.PrefsStore
 import com.algoce95.novaiptv.core.theme.AppColors
 import com.algoce95.novaiptv.core.utils.UrlNormalizer
+import com.algoce95.novaiptv.data.model.EpgProgram
 import com.algoce95.novaiptv.data.model.WatchProgress
 import com.algoce95.novaiptv.presentation.tv.hideSystemBars
 import com.algoce95.novaiptv.presentation.tv.keepScreenOn
 import com.algoce95.novaiptv.presentation.tv.lockLandscape
 import com.algoce95.novaiptv.presentation.tv.rememberTvFocus
+import com.algoce95.novaiptv.presentation.tv.requestFocusReady
 import com.algoce95.novaiptv.presentation.tv.tryRequestFocus
 import com.algoce95.novaiptv.presentation.tv.tvPress
 import com.algoce95.novaiptv.presentation.tv.unlockOrientation
@@ -113,6 +122,9 @@ private const val SEEK_BAR_S = 60L
 private const val SEEK_BAR_LARGE_S = 120L
 private const val CONTROLS_HIDE_MS = 5000L
 private const val RESUME_PROMPT_TIMEOUT_MS = 12_000L
+
+/** Cuentra atrás antes de saltar al siguiente episodio al terminar el actual. */
+private const val AUTO_ADVANCE_S = 8
 
 private enum class FitMode { CONTAIN, COVER, STRETCH, ZOOM }
 
@@ -180,6 +192,18 @@ fun PlayerScreen(onClose: () -> Unit) {
     // reanudar a ciegas. Non-null = posición (ms) que se ofrecerá continuar.
     var resumePromptMs by remember { mutableStateOf<Long?>(null) }
 
+    // Pistas de audio y subtítulo. Sin elección explícita el panel apilaba dos
+    // pistas de texto y se solapaban en pantalla.
+    var showTrackSheet by remember { mutableStateOf(false) }
+    var audioTracks by remember { mutableStateOf(listOf<TrackChoice>()) }
+    var subtitleTracks by remember { mutableStateOf(listOf<TrackChoice>()) }
+
+    // Programa en emisión del canal (solo directo) y cuenta atrás del siguiente
+    // episodio al terminar el actual.
+    var nowProgram by remember { mutableStateOf<EpgProgram?>(null) }
+    var nextProgram by remember { mutableStateOf<EpgProgram?>(null) }
+    var autoAdvanceIn by remember { mutableIntStateOf(0) }
+
     val canSeek = initialized && !treatAsLive && durationMs > 0
     val hasPrevious = session.items.isNotEmpty() && queueIndex > 0
     val hasNext = session.items.isNotEmpty() && queueIndex < session.items.lastIndex
@@ -188,6 +212,8 @@ fun PlayerScreen(onClose: () -> Unit) {
     val playFocus = remember { FocusRequester() }
     val retryFocus = remember { FocusRequester() }
     val resumeContinueFocus = remember { FocusRequester() }
+    val trackSheetFocus = remember { FocusRequester() }
+    val nextEpisodeFocus = remember { FocusRequester() }
     var hideJob by remember { mutableStateOf<Job?>(null) }
     var osdJob by remember { mutableStateOf<Job?>(null) }
 
@@ -282,7 +308,12 @@ fun PlayerScreen(onClose: () -> Unit) {
     }
 
     fun onBackPressed() {
-        if (showControls) hideControls() else close()
+        when {
+            showTrackSheet -> showTrackSheet = false
+            autoAdvanceIn > 0 -> autoAdvanceIn = 0
+            showControls -> hideControls()
+            else -> close()
+        }
     }
 
     fun play() {
@@ -333,6 +364,8 @@ fun PlayerScreen(onClose: () -> Unit) {
         if (session.items.isEmpty()) return
         val next = queueIndex + offset
         if (next < 0 || next > session.items.lastIndex) return
+        // Mover a mano cancela la cuenta atrás del siguiente episodio.
+        autoAdvanceIn = 0
         scope.launch {
             try {
                 saveProgress()
@@ -399,6 +432,55 @@ fun PlayerScreen(onClose: () -> Unit) {
         volume = (volume + delta).coerceIn(0f, 1f)
         exo.volume = volume
         showOsd("Volumen ${(volume * 100).toInt()}%")
+    }
+
+    // --- Pistas de audio y subtítulo -----------------------------------------
+
+    fun refreshTrackChoices() {
+        audioTracks = exo.currentTracks.buildChoices(C.TRACK_TYPE_AUDIO)
+        subtitleTracks = exo.currentTracks.buildChoices(C.TRACK_TYPE_TEXT)
+    }
+
+    /** Con [choice] nulo se vuelve a "Automático" (o se apagan, en subtítulos). */
+    fun selectTrack(type: Int, choice: TrackChoice?) {
+        val builder = exo.trackSelectionParameters.buildUpon().clearOverridesOfType(type)
+        if (type == C.TRACK_TYPE_TEXT && choice == null) {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        } else {
+            builder.setTrackTypeDisabled(type, false)
+            if (choice != null) builder.setOverrideForType(choice.override)
+        }
+        exo.trackSelectionParameters = builder.build()
+        refreshTrackChoices()
+        showOsd(
+            if (type == C.TRACK_TYPE_TEXT) {
+                "Subtítulos: ${choice?.label ?: "apagados"}"
+            } else {
+                "Audio: ${choice?.label ?: "automático"}"
+            },
+        )
+    }
+
+    fun openTrackSheet() {
+        hideJob?.cancel()
+        refreshTrackChoices()
+        showTrackSheet = true
+        scope.launch { trackSheetFocus.requestFocusReady() }
+    }
+
+    /**
+     * Único punto donde se registra el último canal sintonizado: el navegador,
+     * la guía y los resultados de búsqueda montan su propia sesión. Se anota al
+     * sintonizar, no al sonar, porque un canal ilegible sigue siendo el canal
+     * donde te quedaste.
+     */
+    fun rememberLiveChannel() {
+        val id = session.items.getOrNull(queueIndex)?.channelId ?: return
+        scope.launch {
+            runCatching {
+                AppContainer.prefs.setString(PrefsStore.Keys.LAST_LIVE_CHANNEL, id.toString())
+            }
+        }
     }
 
     // --- Ciclo de vida: sistema, wakelock, liberación (réplica de init/dispose).
@@ -470,18 +552,23 @@ fun PlayerScreen(onClose: () -> Unit) {
                 isBuffering = loading
             }
 
+            override fun onTracksChanged(tracks: Tracks) {
+                refreshTrackChoices()
+            }
+
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
                     val d = exo.duration
                     if (d > 0) durationMs = d
+                    refreshTrackChoices()
                 }
-                if (state == Player.STATE_ENDED && !advancing &&
+                if (state == Player.STATE_ENDED && !advancing && autoAdvanceIn == 0 &&
                     session.items.isNotEmpty() && !treatAsLive &&
                     queueIndex < session.items.lastIndex
                 ) {
-                    advancing = true
-                    changeQueueItem(1)
-                    advancing = false
+                    // Antes saltaba de golpe y no había forma de quedarse
+                    // viendo los créditos; ahora cuenta atrás y opción de parar.
+                    autoAdvanceIn = AUTO_ADVANCE_S
                 }
             }
 
@@ -511,6 +598,7 @@ fun PlayerScreen(onClose: () -> Unit) {
             initialized = true
             treatAsLive = true
             isPlaying = exo.isPlaying
+            rememberLiveChannel()
             showControls = true
             playFocus.tryRequestFocus()
             scheduleHide()
@@ -558,6 +646,7 @@ fun PlayerScreen(onClose: () -> Unit) {
                 }
             }
             initialized = true
+            if (treatAsLive) rememberLiveChannel()
             showControls = true
             if (resumePromptMs != null) {
                 resumeContinueFocus.tryRequestFocus()
@@ -598,6 +687,40 @@ fun PlayerScreen(onClose: () -> Unit) {
                 saveProgress()
             } catch (_: Exception) {
             }
+        }
+    }
+
+    // Cuenta atrás del siguiente episodio: 0 = apagado.
+    LaunchedEffect(autoAdvanceIn) {
+        if (autoAdvanceIn <= 0) return@LaunchedEffect
+        delay(1000)
+        if (autoAdvanceIn <= 1) {
+            autoAdvanceIn = 0
+            advancing = true
+            changeQueueItem(1)
+            advancing = false
+        } else {
+            autoAdvanceIn--
+        }
+    }
+
+    // Programa en emisión del canal. Solo en directo, y se vuelve a pedir justo
+    // cuando termina el que se está mostrando.
+    LaunchedEffect(queueIndex, treatAsLive) {
+        nowProgram = null
+        nextProgram = null
+        val channelId = session.items.getOrNull(queueIndex)?.channelId
+        val client = AppContainer.api
+        if (channelId == null || client == null || !treatAsLive) return@LaunchedEffect
+        while (true) {
+            val listings = runCatching { client.getShortEpgPrograms(channelId) }
+                .getOrDefault(emptyList())
+            val nowMs = System.currentTimeMillis()
+            val at = listings.indexOfFirst { nowMs in it.startMs until it.endMs }
+            nowProgram = listings.getOrNull(at)
+            nextProgram = if (at >= 0) listings.getOrNull(at + 1) else listings.firstOrNull()
+            val endsIn = nowProgram?.let { it.endMs - nowMs } ?: 0L
+            delay(if (endsIn > 0) endsIn + 1_000 else 60_000)
         }
     }
 
@@ -678,15 +801,17 @@ fun PlayerScreen(onClose: () -> Unit) {
 
     fun onRootKey(code: Int, isDown: Boolean, repeat: Boolean): Boolean {
         if (handleHardwareKey(code, repeat)) return true
-        if (code == android.view.KeyEvent.KEYCODE_BACK) {
-            if (isDown) onBackPressed()
-            return true
-        }
+        // ATRÁS lo gestiona en exclusiva el BackHandler de abajo: si también se
+        // atiende aquí, la misma pulsación oculta el OSD y acto seguido cierra
+        // el reproductor.
+        if (code == android.view.KeyEvent.KEYCODE_BACK) return false
         if (code == android.view.KeyEvent.KEYCODE_ESCAPE) {
             if (isDown) onBackPressed()
             return true
         }
-        if (!showControls) {
+        if (!showControls && autoAdvanceIn == 0) {
+            // Con la cuenta atrás activa las teclas van al aviso, no a revelar
+            // el OSD: si no, "Cancelar" quedaba inalcanzable.
             if (!isDown) return true
             when (code) {
                 android.view.KeyEvent.KEYCODE_ENTER,
@@ -723,9 +848,9 @@ fun PlayerScreen(onClose: () -> Unit) {
                         repeat = event.nativeKeyEvent.repeatCount > 0,
                     )
                     KeyEventType.KeyUp -> {
-                        // Atrás/Escape ya se tragaron en KeyDown.
-                        code == android.view.KeyEvent.KEYCODE_BACK ||
-                            code == android.view.KeyEvent.KEYCODE_ESCAPE
+                        // Escape ya se tragó en KeyDown; Atrás se deja pasar al
+                        // BackHandler, que es quien lo atiende.
+                        code == android.view.KeyEvent.KEYCODE_ESCAPE
                     }
                     else -> false
                 }
@@ -824,6 +949,12 @@ fun PlayerScreen(onClose: () -> Unit) {
                     FitMode.ZOOM -> "Zoom"
                 },
                 restartLabel = if (treatAsLive) "Recargar" else "Reiniciar",
+                nowPlaying = nowProgram?.title,
+                nowRange = nowProgram?.let {
+                    "${clockLabel(it.startMs)} – ${clockLabel(it.endMs)}"
+                },
+                nextPlaying = nextProgram?.let { "${clockLabel(it.startMs)}  ${it.title}" },
+                showTracksChip = audioTracks.size + subtitleTracks.size > 1,
                 playFocus = playFocus,
                 onBack = ::close,
                 onTogglePlay = ::togglePlayPause,
@@ -833,6 +964,7 @@ fun PlayerScreen(onClose: () -> Unit) {
                 onNext = { changeQueueItem(1) },
                 onCycleFit = ::cycleFit,
                 onRestart = ::restart,
+                onOpenTracks = ::openTrackSheet,
             )
         }
         if (!hasError && resumePromptMs != null) {
@@ -843,7 +975,75 @@ fun PlayerScreen(onClose: () -> Unit) {
                 onRestart = ::restartFromBeginning,
             )
         }
+        if (showTrackSheet) {
+            TrackSheet(
+                audioTracks = audioTracks,
+                subtitleTracks = subtitleTracks,
+                firstFocus = trackSheetFocus,
+                onAudio = { selectTrack(C.TRACK_TYPE_AUDIO, it) },
+                onSubtitle = { selectTrack(C.TRACK_TYPE_TEXT, it) },
+                onClose = { showTrackSheet = false },
+            )
+        }
+        if (!hasError && autoAdvanceIn > 0) {
+            NextEpisodeOverlay(
+                seconds = autoAdvanceIn,
+                nextTitle = session.items.getOrNull(queueIndex + 1)?.title.orEmpty(),
+                actionFocus = nextEpisodeFocus,
+                onPlayNow = {
+                    autoAdvanceIn = 0
+                    changeQueueItem(1)
+                },
+                onCancel = { autoAdvanceIn = 0 },
+            )
+        }
     }
+}
+
+/** Una pista elegible del reproductor, con la etiqueta ya legible. */
+private data class TrackChoice(
+    val override: TrackSelectionOverride,
+    val label: String,
+    val selected: Boolean,
+)
+
+/**
+ * Pistas de un tipo. El `TrackSelectionOverride` se monta sobre el
+ * `MediaTrackGroup`, no sobre el índice del grupo: los índices cambian entre
+ * actualizaciones de `Tracks` y la elección se perdía al cambiar de canal.
+ */
+private fun Tracks.buildChoices(type: Int): List<TrackChoice> = groups
+    .filter { it.type == type && it.isSupported }
+    .flatMap { group ->
+        (0 until group.length).map { index ->
+            TrackChoice(
+                override = TrackSelectionOverride(group.mediaTrackGroup, index),
+                label = trackLabel(group.getTrackFormat(index), type, index),
+                selected = group.isTrackSelected(index),
+            )
+        }
+    }
+
+private fun trackLabel(format: Format, type: Int, index: Int): String {
+    val language = format.language?.takeIf { it.isNotBlank() }?.let { tag ->
+        // El panel manda códigos de 2 o 3 letras; si no salen, se muestran crudos.
+        java.util.Locale.forLanguageTag(tag).displayLanguage.ifBlank { tag.uppercase() }
+    }
+    val parts = listOfNotNull(
+        language,
+        format.label?.takeIf { it.isNotBlank() },
+        if (type == C.TRACK_TYPE_TEXT) {
+            null
+        } else {
+            format.sampleMimeType?.substringAfterLast('/')?.uppercase()
+        },
+    )
+    return parts.ifEmpty { listOf("Pista ${index + 1}") }.joinToString(" · ")
+}
+
+private fun clockLabel(ms: Long): String {
+    val at = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
+    return "%02d:%02d".format(at.hour, at.minute)
 }
 
 private fun formatDuration(ms: Long): String {
@@ -972,6 +1172,201 @@ private fun ResumePromptButton(
     }
 }
 
+/**
+ * Panel de pistas. Con [firstFocus] en la primera opción de la primera sección
+ * que exista; si no hay ninguna, el panel no tiene sentido y no se abre.
+ */
+@Composable
+private fun TrackSheet(
+    audioTracks: List<TrackChoice>,
+    subtitleTracks: List<TrackChoice>,
+    firstFocus: FocusRequester,
+    onAudio: (TrackChoice?) -> Unit,
+    onSubtitle: (TrackChoice?) -> Unit,
+    onClose: () -> Unit,
+) {
+    val showSubtitles = subtitleTracks.isNotEmpty()
+    val showAudio = audioTracks.size > 1
+    // Sin subtítulos, el audio es la primera sección que hay y la que recibe el
+    // foco al abrir.
+    val audioFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { firstFocus.requestFocusReady() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 560.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(AppColors.panel)
+                .padding(horizontal = 26.dp, vertical = 20.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Idiomas",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.W700,
+                    modifier = Modifier.weight(1f),
+                )
+                TvCircleButton(
+                    icon = Icons.Filled.Close,
+                    contentDescription = "Cerrar",
+                    iconSize = 22,
+                    onClick = onClose,
+                )
+            }
+            if (showSubtitles) {
+                Spacer(Modifier.height(12.dp))
+                TrackSection(
+                    title = "Subtítulos",
+                    options = listOf(
+                        "Apagados" to subtitleTracks.none { it.selected },
+                    ) + subtitleTracks.map { it.label to it.selected },
+                    onSelect = { index ->
+                        onSubtitle(if (index == 0) null else subtitleTracks[index - 1])
+                    },
+                    focusRequester = firstFocus,
+                )
+            }
+            if (showAudio) {
+                Spacer(Modifier.height(16.dp))
+                TrackSection(
+                    title = "Audio",
+                    options = listOf(
+                        "Automático" to audioTracks.none { it.selected },
+                    ) + audioTracks.map { it.label to it.selected },
+                    onSelect = { index ->
+                        onAudio(if (index == 0) null else audioTracks[index - 1])
+                    },
+                    // Sin subtítulos, el audio es la primera sección que hay.
+                    focusRequester = if (showSubtitles) audioFocus else firstFocus,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackSection(
+    title: String,
+    options: List<Pair<String, Boolean>>,
+    onSelect: (Int) -> Unit,
+    focusRequester: FocusRequester,
+) {
+    Column {
+        Text(
+            text = title.uppercase(),
+            color = Color.White.copy(alpha = 0.55f),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.W700,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+        options.forEachIndexed { index, (label, selected) ->
+            val focus = rememberTvFocus()
+            val focused = focus.focused
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        when {
+                            focused -> AppColors.accent.copy(alpha = 0.26f)
+                            selected -> AppColors.mint.copy(alpha = 0.12f)
+                            else -> Color.Transparent
+                        },
+                    )
+                    .border(
+                        width = if (focused) 2.dp else 1.dp,
+                        color = if (focused) AppColors.mint else Color.Transparent,
+                        shape = RoundedCornerShape(8.dp),
+                    )
+                    .then(if (index == 0) Modifier.focusRequester(focusRequester) else Modifier)
+                    .focusable(interactionSource = focus.interaction)
+                    .tvPress(fireOnDown = true, onTap = { onSelect(index) })
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = label,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = if (selected) FontWeight.W700 else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (selected) {
+                    Text(
+                        text = "Elegida",
+                        color = AppColors.mint,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.W700,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Aviso modal del siguiente episodio: deja cancelar el salto. */
+@Composable
+private fun NextEpisodeOverlay(
+    seconds: Int,
+    nextTitle: String,
+    actionFocus: FocusRequester,
+    onPlayNow: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    LaunchedEffect(Unit) { actionFocus.requestFocusReady() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.45f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 620.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(AppColors.panel)
+                .padding(horizontal = 28.dp, vertical = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Siguiente episodio en $seconds s",
+                color = AppColors.mint,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.W700,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = nextTitle,
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.W700,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                ResumePromptButton(
+                    label = "Reproducir ahora",
+                    accent = AppColors.accent,
+                    focusRequester = actionFocus,
+                    autofocus = true,
+                    onClick = onPlayNow,
+                )
+                ResumePromptButton(label = "Cancelar", accent = AppColors.mint, onClick = onCancel)
+            }
+        }
+    }
+}
+
 @Composable
 private fun PlayerControls(
     title: String,
@@ -986,6 +1381,10 @@ private fun PlayerControls(
     durationLabel: String,
     fitLabel: String,
     restartLabel: String,
+    nowPlaying: String?,
+    nowRange: String?,
+    nextPlaying: String?,
+    showTracksChip: Boolean,
     playFocus: FocusRequester,
     onBack: () -> Unit,
     onTogglePlay: () -> Unit,
@@ -995,6 +1394,7 @@ private fun PlayerControls(
     onNext: () -> Unit,
     onCycleFit: () -> Unit,
     onRestart: () -> Unit,
+    onOpenTracks: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -1107,6 +1507,53 @@ private fun PlayerControls(
             onSeekFraction = onSeekFraction,
         )
         Spacer(Modifier.height(12.dp))
+        // Qué se está emitiendo. Va dentro del OSD, así que se oculta con él.
+        if (nowPlaying != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(AppColors.mint.copy(alpha = 0.18f))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                ) {
+                    Text(
+                        text = "AHORA",
+                        color = AppColors.mint,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.W700,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = nowPlaying,
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.W600,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (nowRange != null) {
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = nowRange,
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 14.sp,
+                    )
+                }
+            }
+            if (nextPlaying != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "A continuación  $nextPlaying",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             TvChipButton(
                 label = fitLabel,
@@ -1118,6 +1565,13 @@ private fun PlayerControls(
                 icon = Icons.Filled.Replay,
                 onClick = onRestart,
             )
+            if (showTracksChip) {
+                TvChipButton(
+                    label = "Idiomas",
+                    icon = Icons.Filled.Subtitles,
+                    onClick = onOpenTracks,
+                )
+            }
             Spacer(Modifier.weight(1f))
             Text(
                 text = "OK play/pausa  ·  barra ← → 1 min  ·  ↑↓ volumen  ·  Atrás oculta",

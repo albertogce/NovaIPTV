@@ -24,6 +24,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -59,6 +60,7 @@ import com.algoce95.novaiptv.core.di.vmFactory
 import com.algoce95.novaiptv.core.storage.PrefsStore
 import com.algoce95.novaiptv.core.theme.AppColors
 import com.algoce95.novaiptv.core.theme.LocalHighContrast
+import com.algoce95.novaiptv.core.theme.NovaShapes
 import com.algoce95.novaiptv.core.theme.subtleTextColor
 import com.algoce95.novaiptv.data.model.LiveCategory
 import com.algoce95.novaiptv.data.metadata.PosterType
@@ -211,6 +213,8 @@ fun HomeScreen(navController: NavController) {
     var vodCat by rememberSaveable { mutableStateOf<String?>(null) }
     var seriesCat by rememberSaveable { mutableStateOf<String?>(null) }
     var liveQuery by rememberSaveable { mutableStateOf("") }
+    // Canal que Directo debe preseleccionar al abrirse (-1 = ninguno).
+    var liveResumeId by rememberSaveable { mutableIntStateOf(-1) }
     var movieQuery by rememberSaveable { mutableStateOf("") }
     var seriesQuery by rememberSaveable { mutableStateOf("") }
     var globalQuery by rememberSaveable { mutableStateOf("") }
@@ -268,13 +272,22 @@ fun HomeScreen(navController: NavController) {
     }
 
     fun openLiveChannels() {
-        val hasFavorites = state.channels.any { it.isFavorite }
-        liveCat = if (hasFavorites) {
-            FAVORITES_CATEGORY_ID
-        } else {
-            state.liveCats.firstOrNull()?.categoryId
+        // Se entra en el último canal visto, no en el primero de la lista. La
+        // lectura es suspendida, así que la categoría se decide ahí mismo.
+        scope.launch {
+            val visible = vm.visibleLiveChannels()
+            val lastId = AppContainer.prefs
+                .getString(PrefsStore.Keys.LAST_LIVE_CHANNEL)?.toIntOrNull()
+            val last = lastId?.let { id -> visible.firstOrNull { it.channelId == id } }
+            liveCat = when {
+                last != null && last.isFavorite -> FAVORITES_CATEGORY_ID
+                last != null -> last.categoryId
+                state.channels.any { it.isFavorite } -> FAVORITES_CATEGORY_ID
+                else -> state.liveCats.firstOrNull()?.categoryId
+            }
+            liveResumeId = last?.channelId ?: -1
+            activeView = ActiveView.LIVE
         }
-        activeView = ActiveView.LIVE
     }
 
     fun playChannel(channel: LiveChannel, queue: List<LiveChannel>) {
@@ -366,7 +379,19 @@ fun HomeScreen(navController: NavController) {
 
     CompositionLocalProvider(LocalHighContrast provides state.highContrast) {
         Scaffold(
-            snackbarHost = { SnackbarHost(snackbar) },
+            snackbarHost = {
+                // El gris por defecto de Material quedaba fuera de la paleta en
+                // cuanto aparecía un aviso sobre el fondo navy.
+                SnackbarHost(snackbar) { data ->
+                    Snackbar(
+                        snackbarData = data,
+                        containerColor = AppColors.panel,
+                        contentColor = Color.White,
+                        actionContentColor = AppColors.mint,
+                        shape = NovaShapes.chip,
+                    )
+                }
+            },
             containerColor = AppColors.ink,
         ) { padding ->
             Box(
@@ -410,6 +435,7 @@ fun HomeScreen(navController: NavController) {
                         state = state,
                         vm = vm,
                         liveCat = liveCat,
+                        liveResumeId = liveResumeId,
                         vodCat = vodCat,
                         seriesCat = seriesCat,
                         liveQuery = liveQuery,
@@ -445,6 +471,18 @@ fun HomeScreen(navController: NavController) {
                                 snackbar.showSnackbar("Eliminado de Seguir viendo: ${progress.title}")
                             }
                         },
+                        onRemoveHistory = { entry ->
+                            scope.launch {
+                                vm.removeHistoryEntry("${entry.type}:${entry.id}")
+                                snackbar.showSnackbar("Quitado del historial: ${entry.title}")
+                            }
+                        },
+                        onClearHistory = {
+                            scope.launch {
+                                vm.clearHistory()
+                                snackbar.showSnackbar("Historial vaciado")
+                            }
+                        },
                         onProgressUnavailable = { progress ->
                             scope.launch {
                                 snackbar.showSnackbar(
@@ -468,6 +506,7 @@ private fun HomeBody(
     state: HomeCatalogViewModel.UiState,
     vm: HomeCatalogViewModel,
     liveCat: String?,
+    liveResumeId: Int,
     vodCat: String?,
     seriesCat: String?,
     liveQuery: String,
@@ -495,6 +534,8 @@ private fun HomeBody(
     onReorderFavorites: (Int, Int) -> Unit,
     onMoveFavorite: (Int, Int, List<LiveChannel>) -> Unit,
     onRemoveProgress: (WatchProgress) -> Unit,
+    onRemoveHistory: (HistoryEntry) -> Unit,
+    onClearHistory: () -> Unit,
     onProgressUnavailable: (WatchProgress) -> Unit,
     onLoadProgress: () -> Unit,
     onColorKey: (Int) -> Boolean,
@@ -633,6 +674,7 @@ private fun HomeBody(
                     null
                 },
                 favoriteChannels = orderedFavs,
+                resumeChannelId = if (liveResumeId >= 0) liveResumeId else null,
             )
         }
         ActiveView.MOVIES -> {
@@ -732,6 +774,8 @@ private fun HomeBody(
                         ?.let { onPlaySeries(it, null) }
                 }
             },
+            onRemove = onRemoveHistory,
+            onClearAll = onClearHistory,
         )
         ActiveView.CONTINUE_WATCHING -> ContinueWatchingView(
             items = progressList,

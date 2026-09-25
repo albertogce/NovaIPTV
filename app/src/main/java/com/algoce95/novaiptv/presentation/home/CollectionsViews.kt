@@ -2,12 +2,15 @@ package com.algoce95.novaiptv.presentation.home
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -24,10 +27,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -35,9 +40,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +66,7 @@ import com.algoce95.novaiptv.presentation.tv.NovaButton
 import com.algoce95.novaiptv.presentation.tv.RemoteImage
 import com.algoce95.novaiptv.presentation.tv.TvFocusShape
 import com.algoce95.novaiptv.core.theme.AppColors
+import com.algoce95.novaiptv.core.theme.NovaShapes
 import com.algoce95.novaiptv.core.theme.NovaType
 import com.algoce95.novaiptv.core.theme.bodyTextColor
 import com.algoce95.novaiptv.presentation.tv.InitialsFallback
@@ -109,7 +118,12 @@ fun FavoritesView(
 fun HistoryView(
     entries: List<HistoryEntry>,
     onTap: (HistoryEntry) -> Unit,
+    onRemove: (HistoryEntry) -> Unit,
+    onClearAll: () -> Unit,
 ) {
+    var confirmClear by remember { mutableStateOf(false) }
+    val clearFocus = remember { FocusRequester() }
+    val firstCardFocus = remember { FocusRequester() }
     if (entries.isEmpty()) {
         EmptyState(
             icon = Icons.Filled.History,
@@ -119,26 +133,94 @@ fun HistoryView(
         )
         return
     }
-    GridContentView(
-        items = entries,
-        itemKey = { "${it.type}:${it.id}" },
-        columns = 0,
-        itemContent = { HistoryCard(entry = it) },
-        onTap = onTap,
-        header = {
-            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp)) {
-                Text(
-                    text = "Historial",
-                    color = Color.White,
-                    style = NovaType.title,
-                )
-                Text(
-                    text = "${entries.size} títulos reproducidos últimamente.",
-                    style = NovaType.meta,
-                    color = subtleTextColor(),
-                )
-            }
+    Box(Modifier.fillMaxSize()) {
+        GridContentView(
+            items = entries,
+            itemKey = { "${it.type}:${it.id}" },
+            columns = 0,
+            itemContent = { HistoryCard(entry = it) },
+            onTap = onTap,
+            // La pulsación larga con OK quita la entrada, igual que en
+            // "Seguir viendo"; antes el historial solo crecía.
+            onLongPress = onRemove,
+            firstItemFocus = firstCardFocus,
+            headerFocus = clearFocus,
+            header = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "Historial",
+                            color = Color.White,
+                            style = NovaType.title,
+                        )
+                        Text(
+                            text = "${entries.size} títulos · mantén OK para quitar uno",
+                            style = NovaType.meta,
+                            color = subtleTextColor(),
+                        )
+                    }
+                    NovaButton(
+                        label = "Vaciar",
+                        icon = Icons.Filled.Delete,
+                        onClick = { confirmClear = true },
+                        focusRequester = clearFocus,
+                        downFocus = firstCardFocus,
+                    )
+                }
+            },
+        )
+        if (confirmClear) {
+            HistoryClearDialog(
+                count = entries.size,
+                onCancel = { confirmClear = false },
+                onConfirm = {
+                    confirmClear = false
+                    onClearAll()
+                },
+            )
+        }
+    }
+}
+
+/**
+ * Confirmación antes de borrar todo: es la única acción irreversible aquí.
+ * Ventana aparte (`AlertDialog`), como el buscador del inicio: montado como capa
+ * sobre la rejilla, ninguno de sus botones llegaba a recibir el foco del mando.
+ */
+@Composable
+private fun HistoryClearDialog(
+    count: Int,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val cancelFocus = remember { FocusRequester() }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        containerColor = AppColors.panel,
+        titleContentColor = Color.White,
+        textContentColor = subtleTextColor(),
+        shape = NovaShapes.card,
+        title = { Text(text = "¿Vaciar el historial?", style = NovaType.subtitle) },
+        text = {
+            Text(
+                text = "Se quitarán $count títulos. Los seguimos viendo no se borran.",
+                style = NovaType.meta,
+            )
         },
+        dismissButton = {
+            NovaButton(
+                label = "Cancelar",
+                onClick = onCancel,
+                focusRequester = cancelFocus,
+                autofocus = true,
+            )
+        },
+        confirmButton = { NovaButton(label = "Vaciar", onClick = onConfirm) },
     )
 }
 

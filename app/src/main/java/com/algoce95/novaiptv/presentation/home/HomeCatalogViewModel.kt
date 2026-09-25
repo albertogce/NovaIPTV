@@ -425,6 +425,20 @@ class HomeCatalogViewModel(
         AppContainer.watchProgress.remove(id)
     }
 
+    /**
+     * El historial vive en `_state`, así que cada borrado reescribe la lista
+     * completa en el estado: sin eso la rejilla seguiría mostrando la entrada.
+     */
+    suspend fun removeHistoryEntry(key: String) {
+        prefs.dropHistory(key)
+        _state.update { it.copy(history = it.history.filterNot { entry -> entry == key }) }
+    }
+
+    suspend fun clearHistory() {
+        prefs.clearHistory()
+        _state.update { it.copy(history = emptyList()) }
+    }
+
     /** Progreso para Seguir viendo (acabadas caen solo en pelis). */
     suspend fun continueWatching(): List<com.algoce95.novaiptv.data.model.WatchProgress> =
         AppContainer.watchProgress.getAll().filter { progress ->
