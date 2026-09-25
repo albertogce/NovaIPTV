@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -147,8 +148,10 @@ fun DashboardView(
 
     // La spec por defecto en Android (pivot) CENTRA el elemento enfocado: al
     // mover el foco entre los botones, la vista salta hacia abajo. Con esta
-    // spec mínima solo se desplaza lo justo para que el elemento sea visible.
-    CompositionLocalProvider(LocalBringIntoViewSpec provides MinimalBringIntoViewSpec) {
+    // spec mínima solo se desplaza lo justo para que el elemento sea visible,
+    // respetando además el margen interior del contenido.
+    val bringIntoViewSpec = rememberBringIntoViewSpec()
+    CompositionLocalProvider(LocalBringIntoViewSpec provides bringIntoViewSpec) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -162,7 +165,10 @@ fun DashboardView(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
-                    .padding(horizontal = 28.dp, vertical = 18.dp),
+                    .padding(
+                        horizontal = 28.dp,
+                        vertical = DashboardContentPadding,
+                    ),
             ) {
                 DashboardHeader(
                     totalChannels = totalChannels,
@@ -245,19 +251,33 @@ private fun heroEntry(
 ): HeroEntry? = progress.firstOrNull()?.let { HeroEntry.Progress(it) }
     ?: recent.firstOrNull()?.let { HeroEntry.Recent(it) }
 
+/** Margen del contenido dentro del scroll; forma parte del contenido desplazable. */
+private val DashboardContentPadding = 18.dp
+
 /**
- * Desplazamiento de "traer a vista" mínimo: 0 si ya es visible; si no, lo justo
- * para asomar el borde que falte (negativo arriba, positivo abajo).
+ * Desplazamiento de "traer a vista" mínimo: 0 si ya es visible dentro del
+ * margen; si no, lo justo para asomar el borde que falte. Sin reservar ese
+ * margen, subir hasta la cabecera la deja pegada al borde superior de la
+ * pantalla en lugar de recuperar la posición inicial.
  */
 @OptIn(ExperimentalFoundationApi::class)
-private object MinimalBringIntoViewSpec : BringIntoViewSpec {
+private class MinimalBringIntoViewSpec(private val inset: Float) : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-        val end = offset + size
-        if (offset >= 0f && end <= containerSize) return 0f
-        // Más alto que el viewport: mejor dejar el borde superior donde está.
-        if (offset < 0f && end > containerSize) return 0f
-        return if (offset < 0f) offset else end - containerSize
+        val top = offset - inset
+        val bottom = offset + size + inset
+        if (top >= 0f && bottom <= containerSize) return 0f
+        // Más alto que la zona segura: mejor dejar el borde superior donde está.
+        if (top < 0f && bottom > containerSize) return 0f
+        return if (top < 0f) top else bottom - containerSize
     }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun rememberBringIntoViewSpec(): BringIntoViewSpec {
+    val density = LocalDensity.current
+    val inset = with(density) { DashboardContentPadding.toPx() }
+    return remember(inset) { MinimalBringIntoViewSpec(inset) }
 }
 
 /** Cabecera: marca, contadores de biblioteca, caducidad y acciones. */
