@@ -12,6 +12,9 @@ class WatchProgressStore(private val prefs: PrefsStore) {
 
     private val writeMutex = Mutex()
 
+    /** Aviso tras cada cambio (publicación de tarjetas en el inicio de TV). */
+    var onChanged: (suspend (List<WatchProgress>) -> Unit)? = null
+
     suspend fun getAll(): List<WatchProgress> {
         val raw = prefs.getString(PrefsStore.Keys.WATCH_PROGRESS) ?: return emptyList()
         return try {
@@ -37,6 +40,7 @@ class WatchProgressStore(private val prefs: PrefsStore) {
                 JSONArray(items.map { it.toJson() }).toString(),
             )
         }
+        notifyChanged()
     }
 
     suspend fun remove(id: String) {
@@ -47,5 +51,11 @@ class WatchProgressStore(private val prefs: PrefsStore) {
                 JSONArray(items.map { it.toJson() }).toString(),
             )
         }
+        notifyChanged()
+    }
+
+    private suspend fun notifyChanged() {
+        val callback = onChanged ?: return
+        runCatching { callback(getAll()) }
     }
 }

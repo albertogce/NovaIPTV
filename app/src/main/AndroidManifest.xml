@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Publicación de tarjetas "Seguir viendo" en el inicio de Android TV. -->
+    <uses-permission android:name="android.permission.ACCESS_TV_PROGRAM_PROVIDER" />
 
     <uses-feature
         android:name="android.software.leanback"
@@ -31,6 +33,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- Deep link de las tarjetas "Seguir viendo" del inicio de TV. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="novaiptv" android:host="resume" />
+            </intent-filter>
         </activity>
+        <!-- El launcher de TV solo puede leer las tarjetas vía content://. -->
+        <provider
+            android:name="com.algoce95.novaiptv.data.tv.ProgramImageProvider"
+            android:authorities="com.algoce95.novaiptv.programimages"
+            android:exported="true"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

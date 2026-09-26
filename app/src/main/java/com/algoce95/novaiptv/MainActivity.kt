@@ -1,5 +1,6 @@
 package com.algoce95.novaiptv
 
+import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -28,6 +29,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        handleResumeIntent(intent)
         // Breve permanencia mínima: evita el parpadeo del tema antiguo y deja
         // ver el logo; el sistema anima la salida.
         splash.setKeepOnScreenCondition { SystemClock.elapsedRealtime() < splashUntil }
@@ -37,6 +39,21 @@ class MainActivity : ComponentActivity() {
                 AppNav()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleResumeIntent(intent)
+    }
+
+    /** Tarjeta "Seguir viendo" pulsada en el inicio de Android TV. */
+    private fun handleResumeIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val data = intent.data ?: return
+        if (data.scheme != "novaiptv" || data.host != "resume") return
+        data.getQueryParameter("progress")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { AppContainer.pendingResume.value = it }
     }
 
     override fun onStart() {

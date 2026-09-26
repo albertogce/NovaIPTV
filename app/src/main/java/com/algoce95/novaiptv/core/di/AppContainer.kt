@@ -1,6 +1,7 @@
 package com.algoce95.novaiptv.core.di
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.algoce95.novaiptv.core.storage.CredentialStore
@@ -10,6 +11,12 @@ import com.algoce95.novaiptv.data.model.LiveChannel
 import com.algoce95.novaiptv.data.model.Series
 import com.algoce95.novaiptv.data.model.VodMovie
 import com.algoce95.novaiptv.data.playback.WatchProgressStore
+import com.algoce95.novaiptv.data.tv.WatchNextPublisher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -67,6 +74,12 @@ object AppContainer {
     var playerSession: PlayerSession? = null
 
     /**
+     * Id de progreso pedido desde una tarjeta "Seguir viendo" del inicio de TV
+     * (`novaiptv://resume`). HomeScreen lo consume tras pasar el login.
+     */
+    val pendingResume = MutableStateFlow<String?>(null)
+
+    /**
      * Garantía de una sola conexión de streaming: MainActivity avisa al pasar a
      * segundo plano y el reproductor detiene la red; al volver reanuda si estaba
      * sonando. El refresco periódico también se salta en segundo plano.
@@ -98,10 +111,29 @@ object AppContainer {
             // La migración lee el fichero heredado DESPUÉS del precargado
             // de servidor/usuario, y luego lo borra.
             prefs.migrateFromFlutterPrefs()
-            watchProgress = WatchProgressStore(prefs)
+            watchProgress = WatchProgressStore(prefs).also { store ->
+                // Cada cambio de progreso refleja el "Seguir viendo" en el
+                // inicio de Android TV (en dispositivos sin perfil TV no-op).
+                store.onChanged = { items ->
+                    if (WatchNextPublisher.isSupported(appContext)) {
+                        runCatching { WatchNextPublisher.sync(appContext, items) }
+                            .onFailure { Log.w("NovaIPTV", "watchnext: $it") }
+                    }
+                }
+            }
             refreshApi()
             initialized = true
-            return isAuthenticated()
+            val authenticated = isAuthenticated()
+            if (authenticated && WatchNextPublisher.isSupported(appContext)) {
+                // Reconstruye las tarjetas tras una actualización/borrado del
+                // launcher: en segundo plano, sin demorar el arranque.
+                CoroutineScope(Dispatchers.IO).launch {
+                    delay(5_000)
+                    runCatching { WatchNextPublisher.sync(appContext, watchProgress.getAll()) }
+                        .onFailure { Log.w("NovaIPTV", "watchnext init: $it") }
+                }
+            }
+            return authenticated
         }
     }
 

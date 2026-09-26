@@ -71,6 +71,7 @@ import com.algoce95.novaiptv.data.model.VodCategory
 import com.algoce95.novaiptv.data.model.VodMovie
 import com.algoce95.novaiptv.data.model.WatchProgress
 import com.algoce95.novaiptv.presentation.nav.Routes
+import com.algoce95.novaiptv.presentation.player.ResumeLauncher
 import com.algoce95.novaiptv.presentation.tv.TvKeys
 import com.algoce95.novaiptv.presentation.tv.hideSystemBars
 import com.algoce95.novaiptv.presentation.tv.showSystemBars
@@ -239,6 +240,24 @@ fun HomeScreen(navController: NavController) {
 
     fun loadProgress() {
         scope.launch { progressList = vm.continueWatching() }
+    }
+
+    // Tarjeta "Seguir viendo" pulsada en el inicio de Android TV: abre el
+    // contenido con el progreso guardado (el reproductor ofrece continuar).
+    // Sin sesión se queda pendiente hasta terminar el login.
+    val pendingResume by AppContainer.pendingResume.collectAsState()
+    LaunchedEffect(pendingResume) {
+        val progressId = pendingResume ?: return@LaunchedEffect
+        if (!AppContainer.isAuthenticated()) return@LaunchedEffect
+        AppContainer.pendingResume.value = null
+        when (val outcome = ResumeLauncher.build(progressId)) {
+            is ResumeLauncher.Outcome.Play -> {
+                AppContainer.playerSession = outcome.session
+                navController.navigate(Routes.PLAYER)
+            }
+            ResumeLauncher.Outcome.Unavailable ->
+                snackbar.showSnackbar("El contenido ya no está disponible")
+        }
     }
 
     LaunchedEffect(activeView) {

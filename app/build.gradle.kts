@@ -118,6 +118,8 @@ dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    // Tarjetas de "Seguir viendo" en el inicio de Android TV (program updates).
+    implementation("androidx.tvprovider:tvprovider:1.1.0")
 
     implementation("io.coil-kt.coil3:coil-compose:3.1.0") // O la versión 2.x que estés usando (ej: 2.6.0)
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.1.0")
