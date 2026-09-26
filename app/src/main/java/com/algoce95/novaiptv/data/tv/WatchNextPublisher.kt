@@ -31,6 +31,23 @@ object WatchNextPublisher {
 
     private val syncMutex = Mutex()
 
+    /** Último fallo de inserción/consulta, para el diagnóstico de Ajustes. */
+    var lastError: String? = null
+        private set
+
+    /** Filas propias en la tabla watch_next del proveedor de TV. */
+    suspend fun rowCount(context: Context): Int = withContext(Dispatchers.IO) {
+        runCatching {
+            context.contentResolver.query(
+                TvContractCompat.WatchNextPrograms.CONTENT_URI,
+                arrayOf(BaseColumns._ID),
+                null,
+                null,
+                null,
+            )?.use { it.count } ?: -1
+        }.getOrElse { -1 }
+    }
+
     // El reproductor guarda progreso cada pocos segundos; las tarjetas solo son
     // espejo, así que se re-publica como mucho una vez por ventana y cuando
     // cambia el conjunto (borrados van forzados para retirar la tarjeta ya).
@@ -120,8 +137,9 @@ object WatchNextPublisher {
                             )
                         }
                         published++
-                    }
+                    }.onFailure { lastError = "insert ${progress.id}: $it" }
                 }
+                lastError = null.takeIf { published == wanted.size } ?: lastError
                 Log.i(
                     TAG,
                     "watchnext: $published publicadas, $removed retiradas" +

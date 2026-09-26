@@ -81,6 +81,10 @@ import com.algoce95.novaiptv.core.theme.AppColors
 import com.algoce95.novaiptv.core.theme.LocalHighContrast
 import com.algoce95.novaiptv.core.theme.subtleTextColor
 import com.algoce95.novaiptv.data.metadata.PosterResolver
+import com.algoce95.novaiptv.data.tv.WatchNextNotifications
+import com.algoce95.novaiptv.data.tv.WatchNextPublisher
+import androidx.compose.ui.platform.LocalContext
+import android.os.Build
 import com.algoce95.novaiptv.presentation.home.HomeCatalogViewModel
 import com.algoce95.novaiptv.presentation.tv.rememberTvFocus
 import com.algoce95.novaiptv.presentation.tv.tryRequestFocus
@@ -140,6 +144,34 @@ fun SettingsScreen(vm: HomeCatalogViewModel, onDone: () -> Unit) {
     var seriesCats by remember { mutableStateOf(state.allSeriesCats) }
     var hiddenSeries by remember { mutableStateOf(setOf<String>()) }
     var tab by rememberSaveable { mutableStateOf(0) }
+
+    // Diagnóstico de las tarjetas de inicio de Android TV: la propia pantalla
+    // dice si el launcher puede leerlas (filas, notificaciones, fallo último).
+    val context = LocalContext.current
+    var tvDiag by remember { mutableStateOf("Comprobando…") }
+    var tvDiagTick by remember { mutableStateOf(0) }
+    LaunchedEffect(tvDiagTick) {
+        val items = AppContainer.watchProgress.getAll()
+        if (tvDiagTick > 0) {
+            runCatching { WatchNextPublisher.sync(context, items, force = true) }
+        }
+        val candidates = WatchNextPublisher.candidates(items)
+        tvDiag = buildString {
+            appendLine(
+                "Perfil TV: " +
+                    if (context.packageManager.hasSystemFeature("android.software.leanback")) {
+                        "sí"
+                    } else {
+                        "no"
+                    },
+            )
+            appendLine("Android: API ${Build.VERSION.SDK_INT}")
+            appendLine("Filas en el proveedor de TV: ${WatchNextPublisher.rowCount(context)}")
+            appendLine("Notificaciones activas: ${WatchNextNotifications.activeCount(context)}")
+            appendLine("Progresos: ${items.size} · candidatos: ${candidates.size}")
+            append("Último fallo: ${WatchNextPublisher.lastError ?: "ninguno"}")
+        }
+    }
     val scaleFocus = remember { FocusRequester() }
     val urlFocus = remember { FocusRequester() }
 
@@ -476,6 +508,38 @@ fun SettingsScreen(vm: HomeCatalogViewModel, onDone: () -> Unit) {
                     Text(
                         text = "Útil tras añadir o cambiar la key de TMDB para reintentar los " +
                             "títulos que fallaron.",
+                        color = subtleTextColor(),
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(28.dp))
+                SectionHeader("Inicio de Android TV")
+                Spacer(Modifier.height(12.dp))
+                SettingsCard {
+                    Text(
+                        text = tvDiag,
+                        color = subtleTextColor(),
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Button(
+                        onClick = { tvDiagTick++ },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AppColors.accent,
+                            contentColor = Color.White,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Republicar y comprobar")
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Las tarjetas de «Seguir viendo» se publican al terminar " +
+                            "una sesión; este botón las regenera y muestra el estado.",
                         color = subtleTextColor(),
                         fontSize = 12.sp,
                     )

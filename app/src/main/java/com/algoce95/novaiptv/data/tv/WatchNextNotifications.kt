@@ -24,10 +24,14 @@ object WatchNextNotifications {
     private const val CHANNEL_ID = "watch_next"
     private const val KEYS = "watch_next_notif_keys"
 
+    fun activeCount(context: Context): Int =
+        context.getSystemService(NotificationManager::class.java)
+            ?.activeNotifications?.count { it.packageName == context.packageName } ?: -1
+
     suspend fun publish(context: Context, candidates: List<WatchProgress>) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Seguir viendo", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, "Seguir viendo", NotificationManager.IMPORTANCE_DEFAULT)
                 .apply { setShowBadge(false) },
         )
         val prefs = AppContainer.prefs
