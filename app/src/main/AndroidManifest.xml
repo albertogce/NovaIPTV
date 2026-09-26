@@ -3,6 +3,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Publicación de tarjetas "Seguir viendo" en el inicio de Android TV. -->
     <uses-permission android:name="android.permission.ACCESS_TV_PROGRAM_PROVIDER" />
+    <!-- Fila de recomendaciones del launcher clásico (Android 13+ la exige). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-feature
         android:name="android.software.leanback"

@@ -130,6 +130,10 @@ object WatchNextPublisher {
                 if (Log.isLoggable(TAG, Log.DEBUG)) {
                     Log.d(TAG, "watchnext ids: ${wanted.map { it.id }}")
                 }
+                // El launcher clásico de Android TV se alimenta aquí en vez de
+                // (o además de) la tabla watch_next.
+                runCatching { WatchNextNotifications.publish(context, wanted) }
+                    .onFailure { Log.w(TAG, "recomendaciones: $it") }
                 lastSignature = signature
                 lastSyncMs = android.os.SystemClock.elapsedRealtime()
             }

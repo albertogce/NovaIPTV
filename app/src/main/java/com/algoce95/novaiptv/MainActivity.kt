@@ -1,6 +1,9 @@
 package com.algoce95.novaiptv
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -34,10 +37,25 @@ class MainActivity : ComponentActivity() {
         // ver el logo; el sistema anima la salida.
         splash.setKeepOnScreenCondition { SystemClock.elapsedRealtime() < splashUntil }
         enableEdgeToEdge()
+        requestNotificationPermissionIfNeeded()
         setContent {
             NovaTheme {
                 AppNav()
             }
+        }
+    }
+
+    /**
+     * Android 13+ descarta en silencio las notificaciones de recomendación sin
+     * POST_NOTIFICATIONS concedida; en TV se pide una sola vez al arrancar.
+     */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < 33) return
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)) return
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42)
         }
     }
 
