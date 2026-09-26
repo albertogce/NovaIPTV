@@ -514,8 +514,10 @@ fun PlayerScreen(onClose: () -> Unit) {
                     )
                     // Fuera del hilo principal: serializar y escribir prefs en
                     // onDispose congelaba la UI (y aportaba al ANR) al salir.
+                    // Con force: es la posición final de la sesión, la tarjeta
+                    // debe actualizarse aunque el refresco periódico vaya throttled.
                     CoroutineScope(Dispatchers.IO).launch {
-                        runCatching { AppContainer.watchProgress.save(progress) }
+                        runCatching { AppContainer.watchProgress.save(progress, force = true) }
                     }
                 }
             }

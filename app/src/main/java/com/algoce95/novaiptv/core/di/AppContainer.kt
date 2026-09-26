@@ -114,9 +114,9 @@ object AppContainer {
             watchProgress = WatchProgressStore(prefs).also { store ->
                 // Cada cambio de progreso refleja el "Seguir viendo" en el
                 // inicio de Android TV (en dispositivos sin perfil TV no-op).
-                store.onChanged = { items ->
+                store.onChanged = { items, force ->
                     if (WatchNextPublisher.isSupported(appContext)) {
-                        runCatching { WatchNextPublisher.sync(appContext, items) }
+                        runCatching { WatchNextPublisher.sync(appContext, items, force) }
                             .onFailure { Log.w("NovaIPTV", "watchnext: $it") }
                     }
                 }
@@ -129,7 +129,7 @@ object AppContainer {
                 // launcher: en segundo plano, sin demorar el arranque.
                 CoroutineScope(Dispatchers.IO).launch {
                     delay(5_000)
-                    runCatching { WatchNextPublisher.sync(appContext, watchProgress.getAll()) }
+                    runCatching { WatchNextPublisher.sync(appContext, watchProgress.getAll(), force = true) }
                         .onFailure { Log.w("NovaIPTV", "watchnext init: $it") }
                 }
             }

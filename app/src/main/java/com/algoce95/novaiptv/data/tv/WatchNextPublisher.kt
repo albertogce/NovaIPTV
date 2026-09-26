@@ -31,6 +31,13 @@ object WatchNextPublisher {
 
     private val syncMutex = Mutex()
 
+    // El reproductor guarda progreso cada pocos segundos; las tarjetas solo son
+    // espejo, así que se re-publica como mucho una vez por ventana y cuando
+    // cambia el conjunto (borrados van forzados para retirar la tarjeta ya).
+    private const val MIN_SYNC_INTERVAL_MS = 60_000L
+    private var lastSignature: String? = null
+    private var lastSyncMs = 0L
+
     /** La API de programas solo existe en dispositivos con perfil de TV. */
     fun isSupported(context: Context): Boolean =
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
@@ -48,12 +55,16 @@ object WatchNextPublisher {
             .sortedByDescending { it.updatedAtMs }
             .take(MAX_PROGRAMS)
 
-    suspend fun sync(context: Context, all: List<WatchProgress>) {
+    suspend fun sync(context: Context, all: List<WatchProgress>, force: Boolean = false) {
         if (!isSupported(context)) return
         syncMutex.withLock {
+            val wanted = candidates(all)
+            val signature = wanted.joinToString(";") { "${it.id}@${it.updatedAtMs}" }
+            if (signature == lastSignature) return
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (!force && lastSyncMs != 0L && now - lastSyncMs < MIN_SYNC_INTERVAL_MS) return
             withContext(Dispatchers.IO) {
                 val resolver = context.contentResolver
-                val wanted = candidates(all)
                 val wantedIds = wanted.mapTo(mutableSetOf()) { it.id }
                 // Filas previas de esta app (el proveedor las limita al paquete
                 // llamante; se filtra igualmente por si acaso).
@@ -111,7 +122,16 @@ object WatchNextPublisher {
                         published++
                     }
                 }
-                Log.i(TAG, "watchnext: $published publicadas, $removed retiradas")
+                Log.i(
+                    TAG,
+                    "watchnext: $published publicadas, $removed retiradas" +
+                        " (previas: ${existing.size})",
+                )
+                if (Log.isLoggable(TAG, Log.DEBUG)) {
+                    Log.d(TAG, "watchnext ids: ${wanted.map { it.id }}")
+                }
+                lastSignature = signature
+                lastSyncMs = android.os.SystemClock.elapsedRealtime()
             }
         }
     }

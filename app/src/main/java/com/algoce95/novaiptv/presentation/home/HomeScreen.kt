@@ -244,19 +244,22 @@ fun HomeScreen(navController: NavController) {
 
     // Tarjeta "Seguir viendo" pulsada en el inicio de Android TV: abre el
     // contenido con el progreso guardado (el reproductor ofrece continuar).
-    // Sin sesión se queda pendiente hasta terminar el login.
-    val pendingResume by AppContainer.pendingResume.collectAsState()
-    LaunchedEffect(pendingResume) {
-        val progressId = pendingResume ?: return@LaunchedEffect
-        if (!AppContainer.isAuthenticated()) return@LaunchedEffect
-        AppContainer.pendingResume.value = null
-        when (val outcome = ResumeLauncher.build(progressId)) {
-            is ResumeLauncher.Outcome.Play -> {
-                AppContainer.playerSession = outcome.session
-                navController.navigate(Routes.PLAYER)
+    // Sin sesión se queda pendiente hasta terminar el login. Se recolecta con
+    // clave estable: limpiar el flujo dentro de un LaunchedEffect(pendingResume)
+    // reiniciaba el efecto y cancelaba la petición de red en curso.
+    LaunchedEffect(Unit) {
+        AppContainer.pendingResume.collect { progressId ->
+            if (progressId == null) return@collect
+            if (!AppContainer.isAuthenticated()) return@collect
+            AppContainer.pendingResume.value = null
+            when (val outcome = ResumeLauncher.build(progressId)) {
+                is ResumeLauncher.Outcome.Play -> {
+                    AppContainer.playerSession = outcome.session
+                    navController.navigate(Routes.PLAYER)
+                }
+                ResumeLauncher.Outcome.Unavailable ->
+                    snackbar.showSnackbar("El contenido ya no está disponible")
             }
-            ResumeLauncher.Outcome.Unavailable ->
-                snackbar.showSnackbar("El contenido ya no está disponible")
         }
     }
 

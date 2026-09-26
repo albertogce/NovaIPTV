@@ -30,14 +30,20 @@ object ResumeLauncher {
     }
 
     suspend fun build(progressId: String): Outcome {
-        val api = AppContainer.api ?: return Outcome.Unavailable
-        val progress = AppContainer.watchProgress.get(progressId) ?: return Outcome.Unavailable
+        val api = AppContainer.api ?: return Outcome.Unavailable.also {
+            android.util.Log.w("NovaIPTV", "resume $progressId: sin sesión")
+        }
+        val progress = AppContainer.watchProgress.get(progressId) ?: return Outcome.Unavailable.also {
+            android.util.Log.w("NovaIPTV", "resume $progressId: sin progreso guardado")
+        }
         val session = runCatching {
             when {
                 progressId.startsWith("movie:") -> movieSession(api, progress)
                 progressId.startsWith("series:") -> seriesSession(api, progress)
                 else -> null
             }
+        }.onFailure {
+            android.util.Log.w("NovaIPTV", "resume $progressId: $it")
         }.getOrNull()
         return session?.let { Outcome.Play(it) } ?: Outcome.Unavailable
     }

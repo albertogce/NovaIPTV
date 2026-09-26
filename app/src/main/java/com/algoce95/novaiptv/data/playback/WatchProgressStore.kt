@@ -12,8 +12,9 @@ class WatchProgressStore(private val prefs: PrefsStore) {
 
     private val writeMutex = Mutex()
 
-    /** Aviso tras cada cambio (publicación de tarjetas en el inicio de TV). */
-    var onChanged: (suspend (List<WatchProgress>) -> Unit)? = null
+    /** Aviso tras cada cambio (publicación de tarjetas en el inicio de TV).
+     *  El booleano fuerza la re-publicación inmediata en los borrados. */
+    var onChanged: (suspend (List<WatchProgress>, Boolean) -> Unit)? = null
 
     suspend fun getAll(): List<WatchProgress> {
         val raw = prefs.getString(PrefsStore.Keys.WATCH_PROGRESS) ?: return emptyList()
@@ -30,7 +31,7 @@ class WatchProgressStore(private val prefs: PrefsStore) {
 
     suspend fun get(id: String): WatchProgress? = getAll().firstOrNull { it.id == id }
 
-    suspend fun save(item: WatchProgress) {
+    suspend fun save(item: WatchProgress, force: Boolean = false) {
         writeMutex.withLock {
             val items = getAll().filterNot { it.id == item.id }.toMutableList()
             items.add(0, item)
@@ -40,7 +41,7 @@ class WatchProgressStore(private val prefs: PrefsStore) {
                 JSONArray(items.map { it.toJson() }).toString(),
             )
         }
-        notifyChanged()
+        notifyChanged(force)
     }
 
     suspend fun remove(id: String) {
@@ -51,11 +52,11 @@ class WatchProgressStore(private val prefs: PrefsStore) {
                 JSONArray(items.map { it.toJson() }).toString(),
             )
         }
-        notifyChanged()
+        notifyChanged(force = true)
     }
 
-    private suspend fun notifyChanged() {
+    private suspend fun notifyChanged(force: Boolean) {
         val callback = onChanged ?: return
-        runCatching { callback(getAll()) }
+        runCatching { callback(getAll(), force) }
     }
 }
