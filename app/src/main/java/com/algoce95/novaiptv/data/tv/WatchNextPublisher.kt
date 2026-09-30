@@ -170,7 +170,7 @@ object WatchNextPublisher {
             .setDurationMillis(progress.durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
             .setLastPlaybackPositionMillis(progress.positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
             .setIntent(intent)
-            .setSearchable(false)
+            .setSearchable(true)
             .apply { if (posterUri != null) setPosterArtUri(posterUri) }
             .build()
         return program.toContentValues()
